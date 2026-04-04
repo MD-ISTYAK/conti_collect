@@ -43,6 +43,11 @@ app.use('/api/admin/users', require('./routes/users'));
 app.use('/api/cfa', require('./routes/cfa'));
 app.use('/api/notifications', require('./routes/notifications'));
 
+// Root endpoint (to handle Render's default health checks gracefully)
+app.get('/', (req, res) => {
+  res.status(200).send('RLTS API is running 🚀');
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({

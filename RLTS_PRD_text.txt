@@ -1,0 +1,1350 @@
+﻿
+RETURN LOGISTICS TRACKING SYSTEM
+Complete Product Requirements Document
+Dealer  →  CFA  →  Company Return Management Platform
+Version 1.0
+Production-Grade
+3 Platforms
+Mobile + Web + Backend
+AI-Build Ready
+Complete Specification
+Document Scope
+This document is a complete, production-grade specification for building a Return Logistics Tracking System. It covers every screen, field, API, data model, business rule, error case, and integration required to build and deploy this platform for real-world company use.
+Platforms covered:
+  •  Flutter Mobile App (Android + iOS) for Dealers and CFA agents
+  •  React.js Admin Panel (Web) for Company Administrators
+  •  Node.js + Express.js Backend API with MongoDB database
+SECTION 1  
+SYSTEM OVERVIEW &amp; ARCHITECTURE
+1.1 Purpose &amp; Business Context
+The Return Logistics Tracking System (RLTS) is a multi-platform digital solution designed to eliminate the friction, paper trails, and disputes that arise during product return cycles between Dealers, CFA (Carrying &amp; Forwarding Agents), and the Company. Every return is tracked end-to-end with photographic proof, digital signatures, GPS verification, and a timestamped audit trail.
+1.2 Core Users &amp; Their Pain Points
+DEALER PROBLEMS (solved)
+No visibility once product leaves their premises
+Disputes over whether pickup happened or not
+Delayed refunds with no tracking
+No proof of product condition at handover
+Manual paperwork that gets lost
+COMPANY PROBLEMS (solved)
+CFA agents not accountable for pickups
+No centralized view of all returns
+Fake refund claims without proof
+Inability to track product condition on return
+Audit failures due to missing documentation
+1.3 Technology Stack
+Component
+Technology
+Purpose
+Mobile App
+Flutter 3.x (Dart)
+Dealer &amp; CFA apps on Android and iOS
+Admin Panel
+React.js 18 + Vite
+Company admin web dashboard
+Backend API
+Node.js + Express.js
+REST API, business logic
+Database
+MongoDB + Mongoose
+Document store for all data
+Auth
+JWT + bcrypt
+Secure, stateless authentication
+File Storage
+AWS S3 + CloudFront
+Images, signatures, documents
+Email
+AWS SES / Nodemailer
+Transactional email notifications
+Push Notif.
+Firebase Cloud Messaging
+Real-time mobile alerts
+Realtime
+Socket.IO
+Live status updates
+QR Codes
+qrcode npm + flutter_qr
+Complaint identification
+Maps/GPS
+Google Maps API
+Location capture and display
+Validation
+Joi / Zod
+Input sanitisation on all APIs
+Rate Limit
+express-rate-limit
+API abuse prevention
+Logging
+Winston + Morgan
+Audit logs, error tracking
+Deployment
+PM2 + Nginx / Docker
+Production process management
+1.4 Folder Structure
+Backend (Node.js)
+rlts-backend/
+  src/
+    config/        (db.js, s3.js, ses.js, fcm.js)
+    middleware/    (auth.js, roleCheck.js, validate.js, rateLimiter.js, upload.js)
+    models/        (User, Complaint, PickupProof, CFARegion, Notification, AuditLog)
+    routes/        (auth, complaints, admin, cfa, dealer, notifications)
+    controllers/   (authCtrl, complaintCtrl, adminCtrl, cfaCtrl)
+    services/      (emailService, smsService, s3Service, qrService, socketService)
+    validators/    (authValidators, complaintValidators)
+    utils/         (complaintIdGen, responseHelper, logger)
+    app.js
+    server.js
+  .env
+  Dockerfile
+Flutter App
+rlts_mobile/
+  lib/
+    core/          (constants, theme, router, utils)
+    data/          (models, repositories, datasources)
+    domain/        (entities, usecases)
+    presentation/  (screens, widgets, blocs)
+      auth/        (login_screen, splash_screen)
+      dealer/      (dashboard, create_complaint, complaint_list, complaint_detail)
+      cfa/         (dashboard, pickup_screen, delivery_screen, assigned_list)
+      shared/      (timeline_widget, status_badge, image_picker, signature_pad)
+    main.dart
+    app.dart
+  pubspec.yaml
+React Admin Panel
+rlts-admin/
+  src/
+    api/           (axios instance, auth, complaints, admin, cfa, dealers)
+    components/    (Sidebar, Header, StatusChip, ComplaintTable, Modal, Charts)
+    pages/         (Dashboard, Complaints, CFAManagement, DealerManagement, Refunds, Reports)
+    context/       (AuthContext, NotificationContext)
+    hooks/         (useComplaints, useCFA, useDealers, useSocket)
+    utils/         (formatters, validators, exportHelper)
+    App.jsx
+    main.jsx
+  .env
+SECTION 2  
+AUTHENTICATION &amp; AUTHORIZATION
+2.1 Authentication Flow
+All three platforms (Dealer App, CFA App, Admin Panel) use the same JWT-based authentication system. Tokens are short-lived (24 hours) with refresh tokens (7 days). All API routes except /api/auth/login require a valid Bearer token.
+Login Process
+User enters email + password
+Backend validates credentials against hashed password (bcrypt, 12 rounds)
+If valid: return accessToken (24h) + refreshToken (7d) + user object with role
+If invalid: return 401 with generic message (never reveal which field is wrong)
+Store tokens securely: Flutter uses flutter_secure_storage, React uses httpOnly cookies or memory
+All subsequent requests include: Authorization: Bearer &lt;accessToken&gt;
+Role-Based Access Control (RBAC)
+Action
+Dealer
+CFA
+Admin
+Create complaint
+✓
+✗
+✗
+View own complaints
+✓
+✗
+✗
+View all complaints
+✗
+✗
+✓
+Approve/Reject complaint
+✗
+✗
+✓
+Assign CFA to complaint
+✗
+✗
+✓
+View assigned pickups
+✗
+✓
+✓
+Mark pickup done
+✗
+✓
+✗
+Mark received at CFA
+✗
+✓
+✗
+Verify complaint
+✗
+✗
+✓
+Process refund
+✗
+✗
+✓
+Manage CFA accounts
+✗
+✗
+✓
+Manage dealer accounts
+✗
+✗
+✓
+View analytics
+✗
+✗
+✓
+2.2 Security Requirements
+Passwords hashed with bcrypt (minimum 12 salt rounds). Never store plaintext.
+JWT secret must be minimum 256-bit random string, stored in environment variable.
+Access tokens: 24h expiry. Refresh tokens: 7 days. On logout, invalidate refresh token.
+Rate limit login endpoint: max 5 attempts per IP per 15 minutes. Return 429 with retry-after header.
+All API inputs must be validated and sanitized. Reject requests with unexpected fields.
+HTTPS enforced on all endpoints. HTTP redirects to HTTPS.
+CORS configured with strict allowlist (not wildcard).
+Helmet.js for HTTP security headers.
+File uploads: validate MIME type server-side, not just extension. Max file size: 10MB.
+Audit log every sensitive action (role change, approve, reject, refund).
+SECTION 3  
+DATABASE DESIGN (MONGODB)
+3.1 Users Collection
+Field
+Type
+Required
+Description / Constraints
+_id
+ObjectId
+Auto
+MongoDB auto-generated primary key
+name
+String
+Yes
+Full name. Min 2, max 100 chars.
+email
+String
+Yes
+Unique. Lowercase. Valid email format. Indexed.
+password
+String
+Yes
+bcrypt hash. Never returned in API responses.
+role
+String
+Yes
+Enum: &apos;dealer&apos; | &apos;cfa&apos; | &apos;admin&apos;. Immutable after creation.
+phone
+String
+No
+10-digit mobile number. Used for SMS if enabled.
+businessName
+String
+No
+Dealer shop name or CFA company name.
+address
+Object
+No
+{ street, city, state, pincode, country }
+region
+String
+No
+Geographic region. Used to match CFA to dealer.
+isActive
+Boolean
+Yes
+Default: true. Admin can deactivate. Inactive users cannot login.
+fcmToken
+String
+No
+Firebase push notification token. Updated on each login.
+profileImage
+String
+No
+S3 URL of profile photo.
+createdBy
+ObjectId
+No
+Admin user ID who created this account (for dealer/cfa).
+lastLoginAt
+Date
+No
+Timestamp of last successful login.
+createdAt
+Date
+Auto
+Mongoose timestamps.
+updatedAt
+Date
+Auto
+Mongoose timestamps.
+3.2 Complaints Collection
+Field
+Type
+Required
+Description / Constraints
+_id
+ObjectId
+Auto
+MongoDB auto-generated primary key
+complaintId
+String
+Auto
+Unique. Format: CMP-YYYY-XXXX. Auto-generated. Indexed.
+dealerId
+ObjectId
+Yes
+Ref: Users. The dealer who raised this complaint.
+productType
+String
+Yes
+Enum: &apos;tire&apos; | &apos;glass&apos; | &apos;motor_part&apos; | &apos;battery&apos; | &apos;other&apos;
+productName
+String
+Yes
+Free text product name/model. Max 200 chars.
+quantity
+Number
+Yes
+Min 1. Integer only. Number of units being returned.
+reason
+String
+Yes
+Enum: &apos;defective&apos; | &apos;wrong_item&apos; | &apos;damaged&apos; | &apos;expired&apos; | &apos;other&apos;
+description
+String
+No
+Additional details. Max 1000 chars.
+images
+Array
+Yes
+Min 1, max 5 S3 URLs. Uploaded by dealer at complaint creation.
+status
+String
+Yes
+Enum (see status workflow). Default: &apos;CREATED&apos;. Indexed.
+cfaId
+ObjectId
+No
+Ref: Users (CFA). Set when admin assigns CFA.
+rejectionReason
+String
+No
+Admin must provide reason when rejecting.
+estimatedPickupDate
+Date
+No
+Set by admin when assigning CFA.
+actualPickupDate
+Date
+No
+Set when CFA marks PICKED_UP.
+receivedAtCFADate
+Date
+No
+Set when CFA marks RECEIVED_AT_CFA.
+verifiedDate
+Date
+No
+Set when admin marks VERIFIED.
+refundAmount
+Number
+No
+Amount in INR. Set by admin at refund.
+refundDate
+Date
+No
+Set when admin marks REFUND_PROCESSED.
+refundReference
+String
+No
+Bank/payment reference number for refund.
+adminNotes
+String
+No
+Internal admin notes. Not visible to dealer.
+timeline
+Array
+Auto
+Array of { status, timestamp, updatedBy, note }. Immutable.
+qrCode
+String
+Auto
+S3 URL of QR code image generated at complaint creation.
+createdAt
+Date
+Auto
+Mongoose timestamps.
+updatedAt
+Date
+Auto
+Mongoose timestamps.
+3.3 PickupProof Collection
+Field
+Type
+Required
+Description / Constraints
+_id
+ObjectId
+Auto
+MongoDB auto-generated primary key
+complaintId
+ObjectId
+Yes
+Ref: Complaints. One-to-one relationship.
+pickedBy
+ObjectId
+Yes
+Ref: Users (CFA agent who performed pickup).
+pickupPhotos
+Array
+Yes
+Min 1, max 10 S3 URLs. Photos of product at pickup.
+signatureImage
+String
+Yes
+S3 URL of dealer signature captured on canvas.
+dealerName
+String
+Yes
+Name of dealer who signed. Confirmed at time of pickup.
+gpsLocation
+Object
+Yes
+{ lat: Number, lng: Number, accuracy: Number, address: String }
+pickupTime
+Date
+Yes
+Exact timestamp when CFA marked pickup complete.
+warehousePhotos
+Array
+No
+S3 URLs uploaded when CFA marks RECEIVED_AT_CFA.
+receivedQuantity
+Number
+No
+Confirmed quantity at CFA warehouse. Must match complaint.
+conditionNotes
+String
+No
+CFA notes on product condition on arrival.
+createdAt
+Date
+Auto
+Mongoose timestamps.
+3.4 CFARegions Collection
+Field
+Type
+Required
+Description / Constraints
+_id
+ObjectId
+Auto
+MongoDB auto-generated primary key
+cfaId
+ObjectId
+Yes
+Ref: Users (CFA). Which CFA covers this region.
+regionName
+String
+Yes
+Human-readable name e.g. &apos;Mumbai North&apos;.
+states
+Array
+Yes
+Array of state names covered.
+cities
+Array
+No
+Array of city names within states.
+pincodes
+Array
+No
+Array of 6-digit pincodes for fine-grained routing.
+isActive
+Boolean
+Yes
+Default: true.
+createdAt
+Date
+Auto
+Mongoose timestamps.
+3.5 Notifications Collection
+Field
+Type
+Required
+Description / Constraints
+_id
+ObjectId
+Auto
+MongoDB auto-generated primary key
+userId
+ObjectId
+Yes
+Ref: Users. Recipient of this notification.
+title
+String
+Yes
+Short notification title.
+body
+String
+Yes
+Full notification message.
+type
+String
+Yes
+Enum: &apos;complaint&apos; | &apos;pickup&apos; | &apos;refund&apos; | &apos;system&apos;
+complaintId
+ObjectId
+No
+Linked complaint if applicable.
+isRead
+Boolean
+Yes
+Default: false.
+channel
+Array
+Yes
+Which channels were used: [&apos;push&apos;, &apos;email&apos;, &apos;sms&apos;]
+createdAt
+Date
+Auto
+Mongoose timestamps.
+3.6 AuditLogs Collection
+Field
+Type
+Required
+Description / Constraints
+_id
+ObjectId
+Auto
+MongoDB auto-generated primary key
+action
+String
+Yes
+e.g. &apos;COMPLAINT_APPROVED&apos;, &apos;CFA_ASSIGNED&apos;, &apos;REFUND_PROCESSED&apos;
+performedBy
+ObjectId
+Yes
+Ref: Users. Who did the action.
+targetId
+ObjectId
+Yes
+Ref to the affected document (complaint, user, etc.)
+targetModel
+String
+Yes
+Which collection: &apos;Complaint&apos; | &apos;User&apos; | &apos;PickupProof&apos;
+before
+Object
+No
+Snapshot of relevant fields before change.
+after
+Object
+No
+Snapshot of relevant fields after change.
+ipAddress
+String
+No
+Requester IP address.
+userAgent
+String
+No
+Browser/app user agent string.
+createdAt
+Date
+Auto
+Mongoose timestamps.
+SECTION 4  
+COMPLAINT STATUS WORKFLOW
+4.1 Status Lifecycle
+Every complaint follows a strict linear progression. No skipping of steps is permitted. Every status change is recorded in the timeline array with timestamp, actor, and optional note.
+CREATED
+Dealer submits complaint
+→ Transitions to: APPROVED
+APPROVED
+Admin approves complaint
+→ Transitions to: CFA_ASSIGNED
+CFA_ASSIGNED
+Admin assigns CFA agent
+→ Transitions to: PICKED_UP
+PICKED_UP
+CFA collects product
+→ Transitions to: RECEIVED_AT_CFA
+RECEIVED_AT_CFA
+Product at CFA warehouse
+→ Transitions to: VERIFIED
+VERIFIED
+Admin verifies product
+→ Transitions to: REFUND_PROCESSED
+REFUND_PROCESSED
+Refund issued to dealer
+Terminal state
+4.2 Status Transition Rules
+CREATED → APPROVED or REJECTED
+Actor: Admin only. Admin must review complaint details and images. On approval, system auto-generates QR code if not already created. On rejection, admin must provide rejectionReason (min 10 chars). Dealer receives email notification either way.
+APPROVED → CFA_ASSIGNED
+Actor: Admin only. Admin selects a CFA from the region-matched list. System sets cfaId and estimatedPickupDate. CFA receives push notification and email with complaint details. Dealer is notified that pickup is scheduled.
+CFA_ASSIGNED → PICKED_UP
+Actor: CFA only. CFA must: (1) scan QR code or enter Complaint ID, (2) upload min 1 pickup photo, (3) capture dealer signature, (4) capture GPS location. All four steps mandatory. System creates PickupProof document. Dealer notified with proof link.
+PICKED_UP → RECEIVED_AT_CFA
+Actor: CFA only. CFA must: (1) upload min 1 warehouse photo, (2) confirm received quantity (must match complaint quantity or flag discrepancy). System updates PickupProof with warehouse data. Admin notified for verification.
+RECEIVED_AT_CFA → VERIFIED
+Actor: Admin only. Admin reviews all proof: pickup photos, warehouse photos, signature, GPS, quantity confirmation. Admin can add adminNotes. If discrepancy found, admin can flag and communicate manually. System moves to VERIFIED.
+VERIFIED → REFUND_PROCESSED
+Actor: Admin only. Admin enters refundAmount (INR), refundReference (bank/UPI reference), and optional note. System records exact refundDate. Dealer receives email with refund details. This is the terminal state.
+SECTION 5  
+COMPLETE API REFERENCE
+5.1 Authentication APIs
+Method
+Endpoint
+Auth
+Description
+POST
+/api/auth/login
+Public
+Login with email + password. Returns accessToken + refreshToken.
+POST
+/api/auth/refresh
+Public
+Exchange refresh token for new access token.
+POST
+/api/auth/logout
+Any auth
+Invalidate refresh token server-side.
+GET
+/api/auth/me
+Any auth
+Return current user profile (no password).
+PUT
+/api/auth/change-password
+Any auth
+Change password. Requires current password confirmation.
+5.2 Complaint APIs
+Method
+Endpoint
+Auth
+Description
+POST
+/api/complaints
+Dealer
+Create new complaint. Multipart form-data with images.
+GET
+/api/complaints
+Admin
+Get all complaints. Supports filters, pagination, search.
+GET
+/api/complaints/mine
+Dealer/CFA
+Get own complaints (dealer) or assigned (CFA).
+GET
+/api/complaints/:id
+Any auth
+Get single complaint by ID or complaintId (CMP-xxx).
+GET
+/api/complaints/:id/timeline
+Any auth
+Get full status timeline for a complaint.
+GET
+/api/complaints/:id/proof
+Any auth
+Get pickup proof details (photos, signature, GPS).
+GET
+/api/complaints/:id/qr
+Any auth
+Get QR code image URL for a complaint.
+PUT
+/api/complaints/:id/status
+Admin/CFA
+Update complaint status (with role enforcement).
+5.3 Admin APIs
+Method
+Endpoint
+Auth
+Description
+POST
+/api/admin/complaints/:id/approve
+Admin
+Approve complaint. Body: { notes }
+POST
+/api/admin/complaints/:id/reject
+Admin
+Reject complaint. Body: { rejectionReason }
+POST
+/api/admin/complaints/:id/assign-cfa
+Admin
+Assign CFA. Body: { cfaId, estimatedPickupDate }
+POST
+/api/admin/complaints/:id/verify
+Admin
+Mark complaint verified. Body: { adminNotes }
+POST
+/api/admin/complaints/:id/refund
+Admin
+Process refund. Body: { refundAmount, refundReference, note }
+GET
+/api/admin/dashboard
+Admin
+Get dashboard stats: counts by status, trends.
+GET
+/api/admin/reports/export
+Admin
+Export complaints as CSV/PDF for date range.
+GET
+/api/admin/analytics
+Admin
+Get time-series data for charts.
+5.4 CFA APIs
+Method
+Endpoint
+Auth
+Description
+GET
+/api/cfa/assigned
+CFA
+Get all complaints assigned to this CFA.
+POST
+/api/cfa/pickup/:id
+CFA
+Submit pickup proof. Multipart: photos + signatureImage + gps.
+POST
+/api/cfa/receive/:id
+CFA
+Submit warehouse receipt. Body: { warehousePhotos, receivedQuantity, conditionNotes }
+GET
+/api/cfa/scan/:complaintId
+CFA
+Validate complaint ID from QR scan. Returns complaint summary.
+5.5 User Management APIs
+Method
+Endpoint
+Auth
+Description
+GET
+/api/admin/users
+Admin
+List all users. Filter by role, status, region.
+POST
+/api/admin/users
+Admin
+Create dealer or CFA account. Sends welcome email.
+GET
+/api/admin/users/:id
+Admin
+Get user details.
+PUT
+/api/admin/users/:id
+Admin
+Update user details (name, region, active status).
+DELETE
+/api/admin/users/:id
+Admin
+Soft delete (set isActive=false). Cannot delete Admin.
+GET
+/api/admin/cfa
+Admin
+List all CFA agents with their regions.
+POST
+/api/admin/cfa/regions
+Admin
+Assign or update regions for a CFA.
+5.6 Notification APIs
+Method
+Endpoint
+Auth
+Description
+GET
+/api/notifications
+Any auth
+Get user&apos;s notifications. Paginated.
+PUT
+/api/notifications/:id/read
+Any auth
+Mark single notification as read.
+PUT
+/api/notifications/read-all
+Any auth
+Mark all notifications as read.
+POST
+/api/auth/fcm-token
+Any auth
+Update FCM token for push notifications.
+5.7 Query Parameters (Complaints List)
+Parameter
+Type / Values
+Example
+status
+String enum
+?status=PICKED_UP
+dealerId
+ObjectId
+?dealerId=64abc...
+cfaId
+ObjectId
+?cfaId=64xyz...
+productType
+String enum
+?productType=tire
+dateFrom
+ISO date string
+?dateFrom=2024-01-01
+dateTo
+ISO date string
+?dateTo=2024-12-31
+search
+String
+?search=CMP-2024-0042
+page
+Number (default 1)
+?page=2
+limit
+Number (default 20, max 100)
+?limit=50
+sortBy
+Field name
+?sortBy=createdAt
+sortOrder
+asc | desc
+?sortOrder=desc
+SECTION 6  
+FLUTTER MOBILE APP — COMPLETE SCREEN SPECIFICATIONS
+6.1 Common Screens (Both Roles)
+Splash Screen
+Show company logo centered on gradient background (brand colors)
+Check for stored auth token. If valid: navigate to role-based dashboard. If expired: navigate to login.
+Duration: 2 seconds minimum, then redirect.
+Login Screen
+Company logo at top (centered)
+Email field: keyboard type email, autocorrect off, lowercase transform
+Password field: obscured. Toggle visibility icon (eye icon)
+Login button: full-width, disabled while loading, shows CircularProgressIndicator
+Error display: inline red banner below form (not dialog)
+On success: save tokens to secure storage, navigate to role-specific dashboard
+Forgot password: show email input dialog, send reset link (optional v1 feature)
+No &apos;Register&apos; link. Accounts are created by Admin only.
+Notification Screen (Both Roles)
+List of notifications, newest first
+Unread notifications have blue left border and slightly darker background
+Each item: icon (based on type), title, body preview, relative time (&apos;2 hours ago&apos;)
+Tap notification: navigate to linked complaint if complaintId exists
+Swipe right to mark as read. &apos;Mark all as read&apos; button in header.
+Empty state: illustration + &apos;No notifications yet&apos;
+6.2 Dealer Screens
+Dealer Dashboard
+Header: greeting with dealer name, notification bell with badge count
+Stats row: 4 cards — Total, Pending, In Progress, Completed (tap each to filter list)
+Recent complaints list: last 5 complaints with status badge and time
+Floating Action Button (FAB): &apos;+&apos; icon to create new complaint
+Pull to refresh updates stats and list
+Create Complaint Screen
+Step indicator at top (3 steps: Details, Images, Review)
+STEP 1 — Product Details:
+Product Type: dropdown (Tire, Glass, Motor Part, Battery, Other)
+Product Name/Model: text field (required)
+Quantity: number field with +/- stepper (min 1)
+Return Reason: dropdown (Defective, Wrong Item, Damaged, Expired, Other)
+Description: multi-line text (optional, max 1000 chars with counter)
+STEP 2 — Images:
+Image grid picker. Min 1, max 5 images.
+Tap camera icon to capture. Tap gallery icon to pick.
+Each image shown as thumbnail with delete &apos;x&apos; button.
+Show upload size warning if image &gt; 5MB (auto-compress to &lt;2MB).
+STEP 3 — Review:
+Summary of all entered details. User confirms before submitting.
+Submit button triggers API call with loading state.
+On success: show success dialog with generated Complaint ID. Navigate to complaint detail.
+On failure: show error with retry option.
+Complaint List Screen
+Search bar at top (searches by Complaint ID or product name)
+Filter chips: All | Created | Approved | Picked Up | Received | Verified | Refunded
+Complaint card: Complaint ID, product type icon, product name, status badge, date, quantity
+Status badge color coding: Created=indigo, Approved=cyan, CFA Assigned=blue, Picked Up=teal, Received=green, Verified=yellow, Refunded=emerald
+Infinite scroll pagination (load 20 at a time)
+Empty state per filter: relevant message and illustration
+Complaint Detail Screen (Dealer)
+Complaint ID displayed prominently with QR code button
+Status badge at top, large and prominent
+Product Details section: all fields in a card
+Images section: horizontal scrollable image strip with tap-to-fullscreen
+Timeline section: vertical stepper showing all status changes with timestamps and actor name
+Pickup Proof section (shown after PICKED_UP): photo thumbnails, signature image, GPS address, CFA name, pickup time
+Refund section (shown after REFUND_PROCESSED): amount, reference, date
+Rejection section (if REJECTED): reason displayed in red card
+6.3 CFA Screens
+CFA Dashboard
+Header: CFA agent name, today&apos;s date
+Stats: Assigned today, Pending pickup, Completed this week
+Assigned Pickups list: sorted by estimatedPickupDate, urgent first (overdue highlighted red)
+Each card: Complaint ID, dealer name, dealer address, product, quantity, due date, status badge
+Bottom navigation: Assigned, Pickup, Delivery, Profile
+Pickup Screen
+This is the most critical screen. All 4 steps are mandatory before pickup can be confirmed.
+STEP 1 — Identify Complaint:
+Option A: Tap &apos;Scan QR Code&apos; — launches camera QR scanner (mobile_scanner package)
+Option B: Type Complaint ID manually into text field
+On valid scan/entry: show complaint summary card (product, quantity, dealer details)
+Prevent pickup if complaint status is not CFA_ASSIGNED
+STEP 2 — Upload Pickup Photos:
+Image picker: min 1, max 10 photos of the product at pickup point
+Camera access mandatory. Cannot proceed without at least 1 photo.
+STEP 3 — Capture Dealer Signature:
+Full-screen canvas (signature_pad package)
+Clear button to redo signature
+Preview of drawn signature before accepting
+Cannot proceed with empty/too-small signature (validate minimum stroke count)
+STEP 4 — GPS Location:
+Auto-capture on screen load using geolocator package
+Show map thumbnail with pin at captured location (google_maps_flutter)
+Show address string below map (reverse geocode)
+&apos;Recapture&apos; button if accuracy is poor (&gt;50m)
+CONFIRM — Submit Pickup:
+Summary screen: show all 4 items collected
+&apos;Confirm Pickup&apos; button: uploads all to API, shows progress bar for uploads
+On success: show confirmation with timestamp, navigate back to dashboard
+Delivery / Warehouse Receipt Screen
+Only accessible if complaint is in PICKED_UP status
+Complaint ID displayed at top for verification
+Upload warehouse photos (min 1, max 10)
+Quantity confirmation field: numeric input, pre-filled with complaint quantity
+Discrepancy flag: if entered quantity differs from complaint quantity, show warning and require condition notes
+Condition Notes: multi-line text (required if quantity mismatch)
+Submit button: API call, then redirect to dashboard with success message
+SECTION 7  
+REACT ADMIN PANEL — COMPLETE SCREEN SPECIFICATIONS
+7.1 Layout &amp; Navigation
+Fixed left sidebar (240px wide) on desktop. Collapsible to icon-only mode.
+Top header bar: breadcrumb, notification bell, admin name + avatar, logout.
+Sidebar links: Dashboard, Complaints, CFA Management, Dealer Management, Refunds, Reports, Settings.
+Active link highlighted with blue accent. Sub-menus expand on hover/click.
+Responsive: sidebar becomes bottom drawer on tablet/mobile.
+Theme: clean white background, #1E3A5F dark blue for sidebar, #2563EB for primary actions.
+7.2 Dashboard Page
+KPI Cards Row (4 cards)
+Total Complaints: total count with trend arrow (vs last 30 days)
+Pending Approval: count of CREATED status. Clickable — filters complaint table.
+Pickups In Progress: count of CFA_ASSIGNED + PICKED_UP
+Completed Refunds: count of REFUND_PROCESSED this month
+Charts Section
+Complaints by Status: donut chart (recharts). Color-coded per status.
+Complaints Over Time: line chart (last 30 days). X-axis: date, Y-axis: count.
+Top Dealers by Complaints: horizontal bar chart (top 5 dealers)
+Product Type Distribution: pie chart
+Recent Activity Feed
+Last 10 status changes across all complaints
+Each entry: complaint ID (link), action taken, actor name, timestamp
+7.3 Complaints List Page
+Data table with columns: Complaint ID, Dealer Name, Product, Quantity, Status, Created Date, CFA Assigned, Actions
+Column: Complaint ID is a clickable link to complaint detail
+Column: Status shows a colored chip/badge
+Column: Actions shows contextual buttons based on current status (Approve, Reject, Assign CFA, Verify, Refund)
+Filters panel (collapsible): status, product type, CFA, dealer, date range, search
+Sort: click column header to sort ascending/descending
+Bulk actions: select multiple complaints (checkbox), bulk export as CSV
+Pagination: 20 per page with page selector and &apos;rows per page&apos; dropdown
+Export button: download filtered results as CSV with all fields
+7.4 Complaint Detail Page (Admin View)
+Full-width layout. Back button to list.
+Header bar: Complaint ID, current status badge, action buttons for current step
+Action Modals
+Approve Modal
+Simple confirmation with optional notes field
+&apos;Confirm Approve&apos; button triggers API call
+Reject Modal
+Rejection Reason text area (required, min 10 chars)
+Character count shown. &apos;Confirm Reject&apos; button.
+Assign CFA Modal
+Dropdown of active CFA agents. List pre-filtered by dealer&apos;s region.
+Date picker for estimated pickup date (required, must be future date)
+&apos;Assign&apos; button with confirmation
+Process Refund Modal
+Refund Amount field (numeric, INR, required)
+Reference Number field (bank/UPI ref, required)
+Optional note field
+Summary line showing dealer name and complaint ID for confirmation
+Information Panels
+Dealer Info: name, phone, email, address, region
+Product Details: all fields in a structured card
+Product Images: image gallery with lightbox viewer
+Timeline: vertical stepper with all status changes, actor, timestamp, notes
+CFA Assignment: CFA name, phone, assigned date, estimated pickup date
+Pickup Proof (when available): 3 tabs — Photos, Signature, Location Map
+Warehouse Receipt (when available): warehouse photos, received quantity, condition notes
+Refund Details (when processed): amount, reference, date
+Admin Notes: editable text area visible only to admin. Auto-saves.
+7.5 CFA Management Page
+Table: CFA Name, Email, Phone, Region, Active Complaints, Status, Actions
+&apos;Add CFA&apos; button: modal form with all user fields + region assignment
+&apos;Edit&apos; action: opens modal with pre-filled form
+&apos;Deactivate&apos; action: confirms before deactivating (cannot delete with active complaints)
+&apos;View Regions&apos; action: shows list of states/cities/pincodes assigned
+Region Assignment UI: multi-select dropdown for states, then cities, then pincodes
+7.6 Dealer Management Page
+Table: Dealer Name, Business Name, Email, Phone, Region, Total Complaints, Active Status, Actions
+&apos;Add Dealer&apos; button: modal form with all fields
+&apos;Edit&apos; action: pre-filled modal
+&apos;View Complaints&apos; action: navigates to complaints list filtered by this dealer
+&apos;Deactivate&apos; action: prevents dealer from logging in
+7.7 Reports Page
+Date range picker (from/to)
+Report type selector: All Complaints, Pending Refunds, CFA Performance, Dealer Activity
+Preview table before export
+Export as CSV button (client-side generation or API download)
+Export as PDF button (generates formatted PDF via API)
+SECTION 8  
+NOTIFICATION SYSTEM
+8.1 Email Notification Triggers
+Event
+Recipients
+Email Content
+Complaint Created
+Admin(s)
+New complaint submitted by [Dealer]. Complaint ID, product, quantity.
+Complaint Approved
+Dealer
+Your complaint [ID] has been approved. Pickup will be scheduled.
+Complaint Rejected
+Dealer
+Your complaint [ID] has been rejected. Reason: [rejectionReason].
+CFA Assigned
+Dealer + CFA
+Dealer: Pickup scheduled on [date] by [CFA name]. CFA: You have a new pickup assigned.
+Pickup Completed
+Dealer + Admin
+Product collected from [Dealer] at [time]. View proof link.
+Received at Warehouse
+Admin
+Complaint [ID] received at CFA warehouse. Quantity confirmed: [n].
+Complaint Verified
+Dealer
+Your complaint [ID] has been verified. Refund will be processed.
+Refund Processed
+Dealer
+Refund of INR [amount] processed for complaint [ID]. Reference: [ref].
+Account Created
+Dealer / CFA
+Welcome email with temporary password and login instructions.
+8.2 Push Notification Triggers (FCM)
+CFA assigned: push to CFA agent (&apos;New pickup: Complaint ID [X] assigned to you&apos;)
+Pickup confirmed: push to dealer (&apos;Your product was collected at [time]&apos;)
+Refund processed: push to dealer (&apos;Refund of INR [X] has been processed&apos;)
+Admin receives push for: new complaint created, pickup completed, received at warehouse
+Notification tapping opens the linked complaint in-app (deep link via complaintId)
+All pushes are also stored in Notifications collection for in-app bell icon
+SECTION 9  
+FILE STORAGE (AWS S3)
+9.1 Bucket Structure
+S3 Bucket Layout
+rlts-production/
+  complaints/
+    {complaintId}/
+      product-images/    (uploaded by dealer)
+      pickup-photos/     (uploaded by CFA)
+      warehouse-photos/  (uploaded by CFA)
+      signature/         (PNG of dealer signature)
+      qr-code/           (QR code PNG)
+  profiles/
+    {userId}/
+      avatar.jpg
+  exports/
+    reports/             (temporary, auto-expire 24h)
+  temp/                  (auto-expire 1 hour)
+9.2 Upload Rules
+All uploads go through backend. Never allow direct client-to-S3 (no pre-signed PUT from mobile).
+Backend validates: MIME type (image/jpeg, image/png only), max file size 10MB.
+Images auto-compressed to max 1920px wide, 85% JPEG quality using sharp npm package.
+S3 objects are private. Served via CloudFront with signed URLs (expiry: 24 hours).
+File naming: {complaintId}_{timestamp}_{randomUUID}.jpg — prevents path traversal.
+On complaint rejection or deletion (soft), S3 objects are NOT deleted (audit trail).
+9.3 QR Code Generation
+Generated server-side using qrcode npm package when complaint status moves to APPROVED.
+QR code encodes: complaint ID string (e.g. CMP-2024-0042).
+Saved as PNG to S3 at complaints/{complaintId}/qr-code/qr.png.
+QR code URL returned in complaint detail API response.
+Mobile CFA app uses mobile_scanner to decode. Backend validates the decoded ID.
+SECTION 10  
+ERROR HANDLING &amp; VALIDATION
+10.1 API Response Format
+Standard Success Response
+{
+  &quot;success&quot;: true,
+  &quot;message&quot;: &quot;Complaint created successfully&quot;,
+  &quot;data&quot;: { ... },
+  &quot;meta&quot;: { &quot;page&quot;: 1, &quot;limit&quot;: 20, &quot;total&quot;: 150, &quot;pages&quot;: 8 }  // for lists
+}
+Standard Error Response
+{
+  &quot;success&quot;: false,
+  &quot;message&quot;: &quot;Validation failed&quot;,
+  &quot;errors&quot;: [
+    { &quot;field&quot;: &quot;quantity&quot;, &quot;message&quot;: &quot;Must be a positive integer&quot; },
+    { &quot;field&quot;: &quot;images&quot;, &quot;message&quot;: &quot;Minimum 1 image required&quot; }
+  ]
+}
+10.2 HTTP Status Code Usage
+Code
+When to use
+200 OK
+Successful GET, PUT, DELETE
+201 Created
+Successful POST that creates a new resource (complaint, user)
+400 Bad Request
+Validation errors, missing required fields, invalid format
+401 Unauthorized
+Missing or invalid JWT token
+403 Forbidden
+Valid token but insufficient role permissions
+404 Not Found
+Resource ID does not exist in database
+409 Conflict
+Duplicate creation (e.g. email already exists)
+422 Unprocessable
+Business rule violation (e.g. wrong status transition)
+429 Too Many Requests
+Rate limit exceeded. Include Retry-After header.
+500 Internal Error
+Unexpected server error. Never expose stack trace in production.
+10.3 Input Validation Rules
+Email: valid RFC 5322 format. Lowercase before storage.
+Password: minimum 8 chars, must contain uppercase, lowercase, and digit.
+Complaint ID format: strictly CMP-YYYY-XXXX where YYYY is 4-digit year and XXXX is zero-padded sequential 4-digit number.
+Quantity: integer, min 1, max 10000. Reject decimals.
+Image files: MIME type must be image/jpeg or image/png. Magic bytes validated server-side.
+GPS coordinates: latitude -90 to 90, longitude -180 to 180. Both required together.
+Date fields: ISO 8601 format. Estimated pickup date must be in the future.
+Refund amount: positive number, max 2 decimal places, max INR 10,00,000.
+All string fields: strip HTML tags, trim whitespace. Store sanitized.
+SECTION 11  
+BACKEND MIDDLEWARE STACK
+11.1 Middleware Execution Order
+helmet() — HTTP security headers
+cors(allowList) — CORS with strict origin whitelist
+express.json({ limit: &apos;10mb&apos; }) — Body parser
+morgan(&apos;combined&apos;) — HTTP request logging
+rateLimiter — Global: 100 req/min. Auth: 5 req/15min per IP.
+authMiddleware — Verify JWT, attach req.user
+roleMiddleware(allowedRoles) — Check req.user.role
+validateMiddleware(schema) — Joi/Zod schema validation
+upload (multer + S3) — File upload handling
+Controller function
+errorHandler — Catch all errors, format response
+11.2 Auth Middleware (authMiddleware.js)
+Extract token from Authorization header (Bearer scheme)
+Verify using jwt.verify() with the secret from environment
+Query database to confirm user exists and isActive is true
+Attach full user object to req.user
+Throw 401 if token missing, expired, or tampered
+Throw 403 if user is deactivated
+11.3 Audit Log Middleware
+Wrap all state-changing operations (status changes, user modifications, refunds)
+Automatically capture: action, performedBy, targetId, before state, after state, IP, userAgent
+Write to AuditLogs collection asynchronously (do not block response)
+Audit logs are immutable — no update or delete routes
+SECTION 12  
+DEPLOYMENT &amp; ENVIRONMENT CONFIGURATION
+12.1 Environment Variables (.env)
+Backend Environment Variables
+# Server
+NODE_ENV=production
+PORT=5000
+# Database
+MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/rlts
+# JWT
+JWT_SECRET=&lt;256-bit-random-string&gt;
+JWT_EXPIRES_IN=24h
+JWT_REFRESH_SECRET=&lt;different-256-bit-string&gt;
+JWT_REFRESH_EXPIRES_IN=7d
+# AWS
+AWS_REGION=ap-south-1
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+S3_BUCKET_NAME=rlts-production
+CLOUDFRONT_DOMAIN=https://cdn.yourapp.com
+# Email
+SES_FROM_EMAIL=noreply@yourcompany.com
+SES_REGION=ap-south-1
+# Firebase (Push Notifications)
+FIREBASE_PROJECT_ID=
+FIREBASE_PRIVATE_KEY=
+FIREBASE_CLIENT_EMAIL=
+# CORS
+CORS_ORIGIN=https://admin.yourapp.com,https://yourapp.com
+12.2 Local Development Setup
+Backend
+git clone repo &amp;&amp; cd rlts-backend
+npm install
+cp .env.example .env — fill in values (use MongoDB Atlas free tier for dev)
+npm run dev — starts with nodemon on port 5000
+Seed admin user: npm run seed:admin
+Flutter App
+flutter pub get
+Update lib/core/constants/api_constants.dart with backend URL
+flutter run — connect Android/iOS device or emulator
+For release build: flutter build apk --release
+React Admin Panel
+cd rlts-admin &amp;&amp; npm install
+cp .env.example .env — set VITE_API_URL=http://localhost:5000/api
+npm run dev — Vite dev server on port 5173
+npm run build — production build to dist/
+SECTION 13  
+FLUTTER PACKAGES &amp; REACT DEPENDENCIES
+13.1 Flutter pubspec.yaml Dependencies
+Package
+Purpose
+dio
+HTTP client with interceptors for auth token refresh
+flutter_secure_storage
+Store JWT tokens securely on device
+flutter_bloc / cubit
+State management (BLoC pattern)
+go_router
+Declarative navigation with deep linking
+image_picker
+Camera and gallery image selection
+mobile_scanner
+QR code scanning via camera
+signature
+Canvas-based signature capture widget
+geolocator
+GPS location capture
+google_maps_flutter
+Map display with location pin
+geocoding
+Reverse geocode lat/lng to address string
+firebase_messaging
+FCM push notifications
+firebase_core
+Firebase SDK initialization
+cached_network_image
+Efficient image loading and caching
+photo_view
+Fullscreen image viewer with zoom/pan
+intl
+Date/number formatting, localization
+timeline_tile
+Visual timeline widget for status steps
+shimmer
+Loading skeleton animations
+permission_handler
+Runtime permissions (camera, location, storage)
+connectivity_plus
+Detect offline state, show banners
+flutter_local_notifications
+Local notifications for background events
+shared_preferences
+Non-sensitive local settings storage
+qr_flutter
+Display QR code images in app
+file_picker
+Pick files from device storage
+flutter_image_compress
+Compress images before upload
+path_provider
+Access temp/app directories
+uuid
+Generate unique identifiers client-side
+13.2 React Admin npm Dependencies
+Package
+Purpose
+axios
+HTTP client with interceptors for auto token refresh
+react-router-dom v6
+Client-side routing and navigation
+recharts
+Dashboard charts (line, bar, donut, pie)
+@tanstack/react-query
+Server state management, caching, background refetch
+react-hook-form + zod
+Form state and validation
+@radix-ui/react-*
+Accessible headless UI primitives (modal, dropdown, etc.)
+tailwindcss
+Utility-first styling
+date-fns
+Date parsing, formatting, manipulation
+react-date-range
+Date range picker for filters and reports
+react-dropzone
+Drag-and-drop file upload in admin forms
+react-table (TanStack)
+Feature-rich data tables with sorting/filtering
+socket.io-client
+WebSocket connection for real-time updates
+react-toastify
+Toast notifications for actions and errors
+lucide-react
+Icon library
+xlsx (SheetJS)
+Client-side CSV/Excel export
+qrcode.react
+Display QR codes in admin complaint detail
+SECTION 14  
+CRITICAL BUSINESS RULES
+14.1 Complaint Rules
+A dealer can have a maximum of 10 OPEN (non-terminal) complaints at any time. 11th submission is rejected with 429 message.
+Complaint ID is generated as CMP-{YEAR}-{SEQUENCE} where SEQUENCE is a global auto-increment per year, zero-padded to 4 digits. Reset to 0001 each January 1st.
+A complaint cannot be re-opened after REFUND_PROCESSED or REJECTED. Dealer must create a new complaint.
+Images must be uploaded fresh at the time of complaint creation. Pre-existing S3 URLs are not accepted.
+Quantity in PickupProof (receivedQuantity) must match complaint quantity. If it does not, admin is flagged and must review before verification.
+14.2 CFA Assignment Rules
+Admin can only assign a CFA whose region matches the dealer&apos;s region. API enforces this.
+A CFA agent can have a maximum of 20 active (non-terminal) complaints assigned at one time.
+If a CFA is deactivated while having active assignments, admin must reassign each complaint manually.
+CFA cannot mark pickup if current status is not exactly CFA_ASSIGNED.
+14.3 Refund Rules
+Refund can only be processed on a complaint in VERIFIED status.
+Refund amount must be entered by admin (system does not auto-calculate).
+Refund reference number is mandatory — serves as audit proof.
+Once REFUND_PROCESSED, the complaint is fully closed and immutable.
+SECTION 15  
+REAL-TIME &amp; BONUS FEATURES
+15.1 WebSocket (Socket.IO) Events
+Event Name
+Direction
+Payload / Purpose
+complaint:status_changed
+Server → Client
+{ complaintId, newStatus, timestamp }. Broadcast to dealer + admin rooms.
+complaint:new
+Server → Admin
+{ complaintId, dealerName }. Notify admin on new submission.
+pickup:completed
+Server → Client
+{ complaintId, cfaName, time }. Broadcast to dealer + admin.
+dashboard:stats_updated
+Server → Admin
+Updated counts. Admin dashboard auto-refreshes without page reload.
+notification:new
+Server → Client
+{ title, body, type }. Triggers in-app notification bell update.
+join:room
+Client → Server
+{ userId, role }. Client joins their personal notification room.
+SECTION 16  
+INSTRUCTIONS FOR AI BUILD AGENT
+16.1 Build Order
+Set up MongoDB Atlas, create database &apos;rlts&apos;, create collections per Section 3
+Build and test backend (Section 5) — all API endpoints with Postman collection
+Seed one admin user, one dealer, one CFA for testing
+Build React Admin Panel — start with auth, then dashboard, then complaint management
+Build Flutter App — start with auth and dealer flow, then CFA flow
+Integrate file uploads (S3) and email notifications (SES)
+Add FCM push notifications and Socket.IO realtime
+End-to-end test the full workflow from complaint creation to refund
+16.2 Non-Negotiable Implementation Requirements
+EVERY API endpoint must have input validation. No unvalidated data touches the database.
+EVERY state-changing endpoint must write to AuditLogs. This is mandatory for compliance.
+EVERY file upload must be validated for MIME type server-side. Do not trust Content-Type header.
+NEVER return password hash in any API response. Use .select(&apos;-password&apos;) in Mongoose queries.
+NEVER allow cross-role data access. A dealer can only see their own complaints. A CFA can only see their assigned complaints. Enforce at the query level, not just the route level.
+ALL timestamps must be stored as UTC in MongoDB. Format for display in IST on the frontend.
+The timeline array on Complaint is append-only. Never update or delete timeline entries.
+Complaint ID generator must be atomic (use MongoDB transactions or atomic findAndModify) to prevent duplicate IDs under concurrent load.
+GPS coordinates are required for CFA pickup. Reject the pickup API call if GPS data is missing or out of valid range.
+Images stored on S3 must be served via CloudFront signed URLs only. Never expose direct S3 URLs to clients.
+16.3 Testing Checklist
+Login with each role (dealer, cfa, admin) and verify correct redirects and data access
+Attempt to access dealer route as CFA — expect 403
+Create complaint as dealer, approve as admin, assign CFA, do pickup as CFA, receive at warehouse, verify as admin, process refund
+Attempt to skip a status step (e.g. go from CREATED to PICKED_UP) — expect 422
+Upload an image with invalid MIME type — expect 400
+Try login 6 times with wrong password — expect 429 on 6th attempt
+Deactivate a dealer account, try to login — expect 403
+Check email received for each notification trigger
+Check push notification received for CFA pickup assignment
+Verify QR code can be scanned and resolves to correct complaint
+END OF DOCUMENT
+

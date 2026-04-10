@@ -42,7 +42,7 @@ const ComplaintDetail = () => {
   useEffect(() => { fetchComplaint(); }, [id]);
 
   const fetchCFAs = async () => {
-    try { const { data } = await api.get('/admin/users/cfa'); setCfaList(data.data || []); } catch(e){}
+    try { const { data } = await api.get('/admin/cfa-master'); setCfaList(data.data || []); } catch(e){}
   };
 
   const handleAction = async (endpoint, body, msg) => {
@@ -128,14 +128,52 @@ const ComplaintDetail = () => {
 
         <div className="space-y-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <h3 className="font-semibold text-gray-900 mb-3">Dealer Info</h3>
-            <div className="space-y-2"><div><p className="text-xs text-gray-400">Name</p><p className="text-sm font-medium">{c.dealerId?.name}</p></div><div><p className="text-xs text-gray-400">Business</p><p className="text-sm">{c.dealerId?.businessName||'—'}</p></div><div><p className="text-xs text-gray-400">Email</p><p className="text-sm text-blue-600">{c.dealerId?.email}</p></div><div><p className="text-xs text-gray-400">Region</p><p className="text-sm">{c.dealerId?.region||'—'}</p></div></div>
+            <h3 className="font-semibold text-gray-900 mb-3">Dealer Master Info</h3>
+            <div className="space-y-2"><div><p className="text-xs text-gray-400">AG Code</p><p className="text-sm font-medium">{c.dealerEntity?.code}</p></div><div><p className="text-xs text-gray-400">Company</p><p className="text-sm">{c.dealerEntity?.company||'—'}</p></div><div><p className="text-xs text-gray-400">Region</p><p className="text-sm">{c.dealerEntity?.region||'—'}</p></div></div>
           </div>
           {c.qrCode && <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center"><h3 className="font-semibold mb-3">QR Code</h3><QRCodeSVG value={c.complaintId} size={160} className="mx-auto" fgColor="#1E3A5F" /><p className="text-xs text-gray-400 mt-2">{c.complaintId}</p></div>}
-          {c.cfaId && <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"><h3 className="font-semibold mb-3">CFA Assignment</h3><div className="space-y-2"><div><p className="text-xs text-gray-400">Agent</p><p className="text-sm font-medium">{c.cfaId?.name}</p></div>{c.estimatedPickupDate && <div><p className="text-xs text-gray-400">Est. Pickup</p><p className="text-sm">{formatDate(c.estimatedPickupDate)}</p></div>}</div></div>}
+          {c.cfaEntity && <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"><h3 className="font-semibold mb-3">CFA Assignment</h3><div className="space-y-2"><div><p className="text-xs text-gray-400">Sales Office</p><p className="text-sm font-medium">{c.cfaEntity?.company} ({c.cfaEntity?.code})</p></div>{c.estimatedPickupDate && <div><p className="text-xs text-gray-400">Est. Pickup</p><p className="text-sm">{formatDate(c.estimatedPickupDate)}</p></div>}</div></div>}
+          
+          {c.rescheduleRequests?.length > 0 && (
+            <div className="bg-red-50 rounded-2xl p-6 shadow-sm border border-red-100">
+              <h3 className="font-semibold text-red-900 mb-3 flex items-center gap-2"><Clock size={16} className="text-red-600" /> Reschedule Requests</h3>
+              <div className="space-y-3">
+                {c.rescheduleRequests.map((req, i) => (
+                  <div key={i} className="flex flex-col gap-1 border-b border-red-200 pb-2 last:border-0 last:pb-0">
+                    <p className="text-xs font-semibold text-red-800 uppercase">{req.role}</p>
+                    <p className="text-xs text-red-700">Requested: {formatDateTime(req.requestedAt)}</p>
+                    {req.proposedDate && <p className="text-xs text-red-900 font-medium">Proposed: {formatDateTime(req.proposedDate)}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <h3 className="font-semibold mb-4 flex items-center gap-2"><Clock size={16}/>Timeline</h3>
-            <div>{c.timeline?.map((e,i) => <div key={i} className="flex gap-3"><div className="flex flex-col items-center"><div className="w-3 h-3 rounded-full bg-blue-500 ring-4 ring-blue-100" />{i<c.timeline.length-1 && <div className="w-0.5 flex-1 bg-gray-200 my-1" />}</div><div className="pb-4"><StatusChip status={e.status} size="xs" /><p className="text-xs text-gray-500 mt-1">{formatDateTime(e.timestamp)}</p>{e.note && <p className="text-xs text-gray-400 mt-0.5">{e.note}</p>}</div></div>)}</div>
+            <div>
+              {(() => {
+                const displayTimeline = [...(c.timeline || [])];
+                const hasCreated = displayTimeline.some(t => t.status === 'CREATED');
+                if (!hasCreated) {
+                  if (c.misCreatedAt) {
+                     displayTimeline.unshift({
+                        status: 'CREATED',
+                        timestamp: c.misCreatedAt,
+                        note: 'Complaint Created (MIS)'
+                     });
+                  } else if (c.createdAt) {
+                     displayTimeline.unshift({
+                        status: 'CREATED',
+                        timestamp: c.createdAt,
+                     });
+                  }
+                }
+                return displayTimeline.map((e,i) => (
+                  <div key={i} className="flex gap-3"><div className="flex flex-col items-center"><div className="w-3 h-3 rounded-full bg-blue-500 ring-4 ring-blue-100" />{i<displayTimeline.length-1 && <div className="w-0.5 flex-1 bg-gray-200 my-1" />}</div><div className="pb-4"><StatusChip status={e.status} size="xs" /><p className="text-xs text-gray-500 mt-1">{formatDateTime(e.timestamp)}</p>{e.note && <p className="text-xs text-gray-400 mt-0.5">{e.note}</p>}</div></div>
+                ));
+              })()}
+            </div>
           </div>
         </div>
       </div>
@@ -147,7 +185,7 @@ const ComplaintDetail = () => {
         <div className="space-y-4"><textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} placeholder="Reason (min 10 chars)..." className="w-full p-3 border rounded-xl text-sm h-24 focus:outline-none focus:border-red-500" /><button onClick={() => handleAction(`/admin/complaints/${c._id}/reject`,{rejectionReason},'Rejected')} disabled={actionLoading || rejectionReason.length<10} className="w-full py-2.5 bg-red-500 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2">{actionLoading ? <Loader2 size={16} className="animate-spin"/> : <X size={16}/>}Reject</button></div>
       </Modal>
       <Modal isOpen={showAssignCFA} onClose={() => setShowAssignCFA(false)} title="Assign CFA">
-        <div className="space-y-4"><select value={selectedCFA} onChange={e => setSelectedCFA(e.target.value)} className="w-full p-3 border rounded-xl text-sm"><option value="">Select CFA</option>{cfaList.map(c => <option key={c._id} value={c._id}>{c.name} — {c.activeComplaints||0} active</option>)}</select><input type="date" value={pickupDate} onChange={e => setPickupDate(e.target.value)} min={new Date().toISOString().slice(0,10)} className="w-full p-3 border rounded-xl text-sm" /><button onClick={() => handleAction(`/admin/complaints/${c._id}/assign-cfa`,{cfaId:selectedCFA,estimatedPickupDate:pickupDate},'CFA assigned!')} disabled={actionLoading || !selectedCFA || !pickupDate} className="w-full py-2.5 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2">{actionLoading ? <Loader2 size={16} className="animate-spin"/> : <UserPlus size={16}/>}Assign</button></div>
+        <div className="space-y-4"><select value={selectedCFA} onChange={e => setSelectedCFA(e.target.value)} className="w-full p-3 border rounded-xl text-sm"><option value="">Select CFA Sales Office</option>{cfaList.map(c => <option key={c._id} value={c._id}>{c.company} ({c.code}) — {c.activeComplaints||0} active</option>)}</select><input type="date" value={pickupDate} onChange={e => setPickupDate(e.target.value)} min={new Date().toISOString().slice(0,10)} className="w-full p-3 border rounded-xl text-sm" /><button onClick={() => handleAction(`/admin/complaints/${c._id}/assign-cfa`,{cfaId:selectedCFA,estimatedPickupDate:pickupDate},'CFA assigned!')} disabled={actionLoading || !selectedCFA || !pickupDate} className="w-full py-2.5 bg-blue-600 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2">{actionLoading ? <Loader2 size={16} className="animate-spin"/> : <UserPlus size={16}/>}Assign</button></div>
       </Modal>
       <Modal isOpen={showVerify} onClose={() => setShowVerify(false)} title="Verify Complaint">
         <div className="space-y-4"><textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Admin notes..." className="w-full p-3 border rounded-xl text-sm h-20" /><button onClick={() => handleAction(`/admin/complaints/${c._id}/verify`,{adminNotes:notes},'Verified!')} disabled={actionLoading} className="w-full py-2.5 bg-amber-600 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2">{actionLoading ? <Loader2 size={16} className="animate-spin"/> : <ShieldCheck size={16}/>}Verify</button></div>

@@ -1,5 +1,6 @@
 const Complaint = require('../models/Complaint');
 const User = require('../models/User');
+const CFA = require('../models/CFA');
 const { sendSuccess, sendError } = require('../utils/responseHelper');
 const { writeAuditLog } = require('../services/auditService');
 const { createNotification, notifyMultiple } = require('../services/notificationService');
@@ -13,12 +14,23 @@ const {
 } = require('../services/emailService');
 const logger = require('../utils/logger');
 
+// Helper to get active users for an entity
+const getEntityUserEmails = async (entityId, role) => {
+  const users = await User.find({ [`${role}Entity`]: entityId, isActive: true });
+  return users.map(u => u.email);
+};
+
+const getEntityUserIds = async (entityId, role) => {
+  const users = await User.find({ [`${role}Entity`]: entityId, isActive: true });
+  return users.map(u => u._id);
+};
+
 /**
  * POST /api/admin/complaints/:id/approve
  */
 const approveComplaint = async (req, res, next) => {
   try {
-    const complaint = await Complaint.findById(req.params.id).populate('dealerId', 'name email');
+    const complaint = await Complaint.findById(req.params.id).populate('dealerEntity');
     if (!complaint) return sendError(res, 404, 'Complaint not found.');
 
     if (!complaint.canTransitionTo('APPROVED')) {
@@ -35,17 +47,25 @@ const approveComplaint = async (req, res, next) => {
 
     await complaint.save();
 
-    // Notifications
-    sendComplaintApprovedEmail(complaint.dealerId.email, complaint);
-    createNotification({
-      userId: complaint.dealerId._id,
-      title: 'Complaint Approved',
-      body: `Your complaint ${complaint.complaintId} has been approved.`,
-      type: 'complaint',
-      complaintId: complaint._id,
+    // Notify dealer users
+    const dealerEmails = await getEntityUserEmails(complaint.dealerEntity._id, 'dealer');
+    const dealerUserIds = await getEntityUserIds(complaint.dealerEntity._id, 'dealer');
+
+    if (dealerEmails.length > 0) {
+      sendComplaintApprovedEmail(dealerEmails[0], complaint); // Send to first for now, or adapt emailService to array
+    }
+    
+    dealerUserIds.forEach(userId => {
+      createNotification({
+        userId,
+        title: 'Complaint Approved',
+        body: `Your complaint ${complaint.complaintId} has been approved.`,
+        type: 'complaint',
+        complaintId: complaint._id,
+      });
+      emitStatusChange(complaint.complaintId, 'APPROVED', userId);
     });
 
-    emitStatusChange(complaint.complaintId, 'APPROVED', complaint.dealerId._id);
     emitDashboardUpdate();
 
     writeAuditLog({
@@ -69,7 +89,7 @@ const approveComplaint = async (req, res, next) => {
  */
 const rejectComplaint = async (req, res, next) => {
   try {
-    const complaint = await Complaint.findById(req.params.id).populate('dealerId', 'name email');
+    const complaint = await Complaint.findById(req.params.id).populate('dealerEntity');
     if (!complaint) return sendError(res, 404, 'Complaint not found.');
 
     if (!complaint.canTransitionTo('REJECTED')) {
@@ -83,16 +103,24 @@ const rejectComplaint = async (req, res, next) => {
 
     await complaint.save();
 
-    sendComplaintRejectedEmail(complaint.dealerId.email, complaint);
-    createNotification({
-      userId: complaint.dealerId._id,
-      title: 'Complaint Rejected',
-      body: `Your complaint ${complaint.complaintId} has been rejected. Reason: ${req.body.rejectionReason}`,
-      type: 'complaint',
-      complaintId: complaint._id,
+    const dealerEmails = await getEntityUserEmails(complaint.dealerEntity._id, 'dealer');
+    const dealerUserIds = await getEntityUserIds(complaint.dealerEntity._id, 'dealer');
+
+    if (dealerEmails.length > 0) {
+      sendComplaintRejectedEmail(dealerEmails[0], complaint);
+    }
+    
+    dealerUserIds.forEach(userId => {
+      createNotification({
+        userId,
+        title: 'Complaint Rejected',
+        body: `Your complaint ${complaint.complaintId} has been rejected. Reason: ${req.body.rejectionReason}`,
+        type: 'complaint',
+        complaintId: complaint._id,
+      });
+      emitStatusChange(complaint.complaintId, 'REJECTED', userId);
     });
 
-    emitStatusChange(complaint.complaintId, 'REJECTED', complaint.dealerId._id);
     emitDashboardUpdate();
 
     writeAuditLog({
@@ -116,55 +144,66 @@ const rejectComplaint = async (req, res, next) => {
  */
 const assignCFA = async (req, res, next) => {
   try {
-    const { cfaId, estimatedPickupDate } = req.body;
+    const { cfaId, estimatedPickupDate } = req.body; // cfaId is actually CFA Entity ID now
 
-    const complaint = await Complaint.findById(req.params.id).populate('dealerId', 'name email address region');
+    const complaint = await Complaint.findById(req.params.id).populate('dealerEntity');
     if (!complaint) return sendError(res, 404, 'Complaint not found.');
 
     if (!complaint.canTransitionTo('CFA_ASSIGNED')) {
       return sendError(res, 422, `Cannot assign CFA. Complaint status is ${complaint.status}.`);
     }
 
-    const cfa = await User.findOne({ _id: cfaId, role: 'cfa', isActive: true });
-    if (!cfa) return sendError(res, 404, 'CFA agent not found or inactive.');
+    const cfa = await CFA.findOne({ _id: cfaId, isActive: true });
+    if (!cfa) return sendError(res, 404, 'CFA entity not found or inactive.');
 
     // Check CFA max 20 active assignments
     const cfaActiveCount = await Complaint.countDocuments({
-      cfaId: cfa._id,
+      cfaEntity: cfa._id,
       status: { $in: Complaint.OPEN_STATUSES },
     });
-    if (cfaActiveCount >= 20) {
-      return sendError(res, 422, 'CFA agent has reached maximum 20 active assignments.');
-    }
+    // if (cfaActiveCount >= 20) {
+    //   return sendError(res, 422, 'CFA agent has reached maximum 20 active assignments.');
+    // }
 
     const before = { status: complaint.status };
     complaint.status = 'CFA_ASSIGNED';
-    complaint.cfaId = cfa._id;
+    complaint.cfaEntity = cfa._id;
     complaint.estimatedPickupDate = new Date(estimatedPickupDate);
-    complaint.addTimelineEntry('CFA_ASSIGNED', req.user._id, `Assigned to CFA: ${cfa.name}`);
+    complaint.pickupScheduleStatus = 'CONFIRMED';
+    complaint.addTimelineEntry('CFA_ASSIGNED', req.user._id, `Assigned to CFA: ${cfa.code}`);
 
     await complaint.save();
 
-    // Notify both dealer and CFA
-    sendCfaAssignedEmail(complaint.dealerId.email, cfa.email, complaint, cfa.name, estimatedPickupDate);
+    const dealerEmails = await getEntityUserEmails(complaint.dealerEntity._id, 'dealer');
+    const dealerUserIds = await getEntityUserIds(complaint.dealerEntity._id, 'dealer');
+    const cfaEmails = await getEntityUserEmails(cfa._id, 'cfa');
+    const cfaUserIds = await getEntityUserIds(cfa._id, 'cfa');
 
-    createNotification({
-      userId: complaint.dealerId._id,
-      title: 'Pickup Scheduled',
-      body: `Pickup for ${complaint.complaintId} scheduled for ${new Date(estimatedPickupDate).toLocaleDateString('en-IN')}`,
-      type: 'pickup',
-      complaintId: complaint._id,
+    if (dealerEmails.length > 0 && cfaEmails.length > 0) {
+      sendCfaAssignedEmail(dealerEmails[0], cfaEmails[0], complaint, cfa.code, estimatedPickupDate);
+    }
+
+    dealerUserIds.forEach(userId => {
+      createNotification({
+        userId,
+        title: 'Pickup Scheduled',
+        body: `Pickup for ${complaint.complaintId} scheduled for ${new Date(estimatedPickupDate).toLocaleDateString('en-IN')}`,
+        type: 'pickup',
+        complaintId: complaint._id,
+      });
+      emitStatusChange(complaint.complaintId, 'CFA_ASSIGNED', userId);
     });
 
-    createNotification({
-      userId: cfa._id,
-      title: 'New Pickup Assigned',
-      body: `Pick up complaint ${complaint.complaintId} - ${complaint.productName} x${complaint.quantity}`,
-      type: 'pickup',
-      complaintId: complaint._id,
+    cfaUserIds.forEach(userId => {
+      createNotification({
+        userId,
+        title: 'New Pickup Assigned',
+        body: `Pick up complaint ${complaint.complaintId} - assigned to your CFA`,
+        type: 'pickup',
+        complaintId: complaint._id,
+      });
     });
 
-    emitStatusChange(complaint.complaintId, 'CFA_ASSIGNED', complaint.dealerId._id);
     emitDashboardUpdate();
 
     writeAuditLog({
@@ -173,7 +212,7 @@ const assignCFA = async (req, res, next) => {
       targetId: complaint._id,
       targetModel: 'Complaint',
       before,
-      after: { status: 'CFA_ASSIGNED', cfaId, estimatedPickupDate },
+      after: { status: 'CFA_ASSIGNED', cfaEntity: cfaId, estimatedPickupDate },
       req,
     });
 
@@ -188,7 +227,7 @@ const assignCFA = async (req, res, next) => {
  */
 const verifyComplaint = async (req, res, next) => {
   try {
-    const complaint = await Complaint.findById(req.params.id).populate('dealerId', 'name email');
+    const complaint = await Complaint.findById(req.params.id).populate('dealerEntity');
     if (!complaint) return sendError(res, 404, 'Complaint not found.');
 
     if (!complaint.canTransitionTo('VERIFIED')) {
@@ -203,15 +242,18 @@ const verifyComplaint = async (req, res, next) => {
 
     await complaint.save();
 
-    createNotification({
-      userId: complaint.dealerId._id,
-      title: 'Complaint Verified',
-      body: `Your complaint ${complaint.complaintId} has been verified. Refund will be processed.`,
-      type: 'complaint',
-      complaintId: complaint._id,
+    const dealerUserIds = await getEntityUserIds(complaint.dealerEntity._id, 'dealer');
+    dealerUserIds.forEach(userId => {
+      createNotification({
+        userId,
+        title: 'Complaint Verified',
+        body: `Your complaint ${complaint.complaintId} has been verified. Refund will be processed.`,
+        type: 'complaint',
+        complaintId: complaint._id,
+      });
+      emitStatusChange(complaint.complaintId, 'VERIFIED', userId);
     });
 
-    emitStatusChange(complaint.complaintId, 'VERIFIED', complaint.dealerId._id);
     emitDashboardUpdate();
 
     writeAuditLog({
@@ -237,7 +279,7 @@ const processRefund = async (req, res, next) => {
   try {
     const { refundAmount, refundReference, note } = req.body;
 
-    const complaint = await Complaint.findById(req.params.id).populate('dealerId', 'name email');
+    const complaint = await Complaint.findById(req.params.id).populate('dealerEntity');
     if (!complaint) return sendError(res, 404, 'Complaint not found.');
 
     if (!complaint.canTransitionTo('REFUND_PROCESSED')) {
@@ -253,16 +295,24 @@ const processRefund = async (req, res, next) => {
 
     await complaint.save();
 
-    sendRefundProcessedEmail(complaint.dealerId.email, complaint);
-    createNotification({
-      userId: complaint.dealerId._id,
-      title: 'Refund Processed',
-      body: `Refund of ₹${refundAmount} processed for complaint ${complaint.complaintId}. Ref: ${refundReference}`,
-      type: 'refund',
-      complaintId: complaint._id,
+    const dealerEmails = await getEntityUserEmails(complaint.dealerEntity._id, 'dealer');
+    const dealerUserIds = await getEntityUserIds(complaint.dealerEntity._id, 'dealer');
+
+    if (dealerEmails.length > 0) {
+      sendRefundProcessedEmail(dealerEmails[0], complaint);
+    }
+
+    dealerUserIds.forEach(userId => {
+      createNotification({
+        userId,
+        title: 'Refund Processed',
+        body: `Refund of ₹${refundAmount} processed for complaint ${complaint.complaintId}. Ref: ${refundReference}`,
+        type: 'refund',
+        complaintId: complaint._id,
+      });
+      emitStatusChange(complaint.complaintId, 'REFUND_PROCESSED', userId);
     });
 
-    emitStatusChange(complaint.complaintId, 'REFUND_PROCESSED', complaint.dealerId._id);
     emitDashboardUpdate();
 
     writeAuditLog({
@@ -287,17 +337,7 @@ const processRefund = async (req, res, next) => {
 const getDashboard = async (req, res, next) => {
   try {
     const [
-      total,
-      created,
-      approved,
-      cfaAssigned,
-      pickedUp,
-      receivedAtCfa,
-      verified,
-      refundProcessed,
-      rejected,
-      last30DaysTotal,
-      thisMonthRefunds,
+      total, created, approved, cfaAssigned, pickedUp, receivedAtCfa, verified, refundProcessed, rejected, last30DaysTotal, thisMonthRefunds,
     ] = await Promise.all([
       Complaint.countDocuments(),
       Complaint.countDocuments({ status: 'CREATED' }),
@@ -311,13 +351,10 @@ const getDashboard = async (req, res, next) => {
       Complaint.countDocuments({ createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }),
       Complaint.countDocuments({
         status: 'REFUND_PROCESSED',
-        refundDate: {
-          $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-        },
+        refundDate: { $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
       }),
     ]);
 
-    // Recent activity (last 10 status changes)
     const recentActivity = await Complaint.find()
       .sort({ updatedAt: -1 })
       .limit(10)
@@ -364,36 +401,27 @@ const getAnalytics = async (req, res, next) => {
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    // Complaints over time (last 30 days)
     const complaintsOverTime = await Complaint.aggregate([
       { $match: { createdAt: { $gte: thirtyDaysAgo } } },
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-          count: { $sum: 1 },
-        },
-      },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]);
 
-    // By status
     const byStatus = await Complaint.aggregate([
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
 
-    // By product type
     const byProductType = await Complaint.aggregate([
       { $group: { _id: '$productType', count: { $sum: 1 } } },
     ]);
 
-    // Top dealers
     const topDealers = await Complaint.aggregate([
-      { $group: { _id: '$dealerId', count: { $sum: 1 } } },
+      { $group: { _id: '$dealerEntity', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 5 },
       {
         $lookup: {
-          from: 'users',
+          from: 'dealers',
           localField: '_id',
           foreignField: '_id',
           as: 'dealer',
@@ -402,8 +430,8 @@ const getAnalytics = async (req, res, next) => {
       { $unwind: '$dealer' },
       {
         $project: {
-          name: '$dealer.name',
-          businessName: '$dealer.businessName',
+          name: '$dealer.code',
+          businessName: '$dealer.company',
           count: 1,
         },
       },
@@ -425,7 +453,7 @@ const getAnalytics = async (req, res, next) => {
  */
 const exportReport = async (req, res, next) => {
   try {
-    const { dateFrom, dateTo, format = 'json' } = req.query;
+    const { dateFrom, dateTo } = req.query;
 
     const filter = {};
     if (dateFrom || dateTo) {
@@ -435,12 +463,11 @@ const exportReport = async (req, res, next) => {
     }
 
     const complaints = await Complaint.find(filter)
-      .populate('dealerId', 'name email businessName region')
-      .populate('cfaId', 'name email')
+      .populate('dealerEntity', 'code company region')
+      .populate('cfaEntity', 'code company')
       .sort({ createdAt: -1 })
       .lean();
 
-    // Return as JSON (CSV/PDF generation can be done on frontend)
     sendSuccess(res, 200, 'Report generated', complaints);
   } catch (error) {
     next(error);

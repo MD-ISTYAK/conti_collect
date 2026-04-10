@@ -11,6 +11,14 @@ class CfaRepository {
     return response.data['data'] as List;
   }
 
+  /// Fetch all complaints assigned to this CFA (all statuses), with optional filter.
+  Future<List<dynamic>> getComplaints({String? status}) async {
+    final params = <String, dynamic>{'limit': 100};
+    if (status != null) params['status'] = status;
+    final response = await _api.get(ApiConstants.myComplaints, queryParameters: params);
+    return (response.data['data'] as List?) ?? [];
+  }
+
   Future<Map<String, dynamic>> scanQR(String complaintId) async {
     final response = await _api.get(ApiConstants.cfaScan(complaintId));
     return response.data['data'];

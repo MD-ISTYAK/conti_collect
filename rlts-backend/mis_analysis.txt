@@ -1,0 +1,58 @@
+=== MIS EXCEL ANALYSIS ===
+Total rows: 50
+Unique complaint IDs: 50
+
+=== STATUS BREAKDOWN ===
+Adjusted: 8 rows
+Pending: 5 rows
+Approved: 9 rows
+Closed: 7 rows
+Under Review: 13 rows
+Rejected: 8 rows
+
+=== ALL ADJUSTED ROWS ===
+1871644825 | AG:6745219 | SO:BLR2 | Created:2026-03-11 | Adjusted:2026-03-14 | Remark:-
+1773827621 | AG:8134567 | SO:KOL9 | Created:2026-03-01 | Adjusted:2026-03-01 | Remark:-
+1846395715 | AG:7234891 | SO:KOL9 | Created:2026-03-05 | Adjusted:2026-03-09 | Remark:Within warranty
+1858509126 | AG:5812367 | SO:JPR6 | Created:2026-03-14 | Adjusted:2026-03-19 | Remark:Within warranty
+1813258777 | AG:5923418 | SO:DEL1 | Created:2026-03-11 | Adjusted:2026-03-16 | Remark:-
+1758690184 | AG:5923418 | SO:BOM3 | Created:2026-03-23 | Adjusted:2026-03-28 | Remark:Out of warranty
+1835655277 | AG:6745219 | SO:JPR6 | Created:2026-03-24 | Adjusted:2026-03-27 | Remark:-
+1888260488 | AG:5812367 | SO:LKN7 | Created:2026-03-06 | Adjusted:2026-03-07 | Remark:Out of warranty
+
+=== ALL COLUMNS (Row 1 sample) ===
+Complaint No. Case No = 1871644825 (type:number)
+Identification No. = 4862061472 (type:number)
+Articale Number = 4999010119 (type:number)
+Description = "2057SP17 45F MT KL2" (type:string)
+AG = 6745219 (type:number)
+Dealer = "JAGANMOT" (type:string)
+ASM = "Arun Verma" (type:string)
+Region = "TN" (type:string)
+Created On = 46092 (type:number)
+Changed On = 46095 (type:number)
+Sales Office = "BLR2" (type:string)
+General Status = "PEN" (type:string)
+Dealer Reference = "AW" (type:string)
+Name of Engineer = "KVJ33416" (type:string)
+Credit Value Net = 7861.4 (type:number)
+Status = "Adjusted" (type:string)
+
+=== ROW 4 (has Status Remark) ===
+Complaint No. Case No = 1899058447
+Identification No. = 4895885885
+Articale Number = 4730031457
+Description = "4518BX14 90J CV PQ7"
+AG = 7234891
+Dealer = "OLAMAPANT"
+ASM = "Arun Verma"
+Region = "WB"
+Created On = 46101
+Changed On = 46104
+Sales Office = "CHN1"
+General Status = "PRO"
+Dealer Reference = "AW"
+Name of Engineer = "KVJ69177"
+Credit Value Net = 2254.6
+Status = "Closed"
+Status Remark = "Within warranty"

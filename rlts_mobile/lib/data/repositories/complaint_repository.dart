@@ -56,4 +56,22 @@ class ComplaintRepository {
     );
     return response.data['data'];
   }
+
+  Future<void> requestReschedule(String id, {String? proposedDate}) async {
+    try {
+      final data = proposedDate != null ? {'proposedDate': proposedDate} : null;
+      await _api.post(ApiConstants.complaintReschedule(id), data: data);
+    } catch (e) {
+      print('requestReschedule error: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> proposePickup(String id, String proposedDate) async {
+    await _api.post(ApiConstants.proposePickup(id), data: {'proposedDate': proposedDate});
+  }
+
+  Future<void> confirmPickup(String id) async {
+    await _api.post(ApiConstants.confirmPickup(id));
+  }
 }

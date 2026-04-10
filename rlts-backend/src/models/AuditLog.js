@@ -18,7 +18,7 @@ const auditLogSchema = new mongoose.Schema({
   targetModel: {
     type: String,
     required: true,
-    enum: ['Complaint', 'User', 'PickupProof'],
+    enum: ['Complaint', 'User', 'PickupProof', 'CFA', 'Dealer', 'ImportLog'],
   },
   before: {
     type: mongoose.Schema.Types.Mixed,

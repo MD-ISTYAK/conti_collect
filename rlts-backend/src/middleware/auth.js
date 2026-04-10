@@ -13,7 +13,9 @@ const auth = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    const user = await User.findById(decoded.id);
+    const user = await User.findById(decoded.id)
+      .populate('cfaEntity')
+      .populate('dealerEntity');
     if (!user) {
       return sendError(res, 401, 'Token is invalid. User not found.');
     }

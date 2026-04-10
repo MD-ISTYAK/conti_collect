@@ -12,6 +12,7 @@ const navItems = [
   { path: '/cfa-management', label: 'CFA Management', icon: Truck },
   { path: '/dealer-management', label: 'Dealer Management', icon: Users },
   { path: '/reports', label: 'Reports', icon: BarChart3 },
+  { path: '/field-management', label: 'Field Management', icon: Settings },
 ];
 
 const Sidebar = ({ collapsed, onToggle }) => {

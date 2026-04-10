@@ -10,9 +10,13 @@ const {
   getAnalytics,
   exportReport,
 } = require('../controllers/adminController');
+const customFieldController = require('../controllers/customFieldController');
+const importController = require('../controllers/importController');
 const auth = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const validate = require('../middleware/validate');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 const {
   approveComplaintSchema,
   rejectComplaintSchema,
@@ -32,5 +36,14 @@ router.post('/complaints/:id/refund', validate(processRefundSchema), processRefu
 router.get('/dashboard', getDashboard);
 router.get('/analytics', getAnalytics);
 router.get('/reports/export', exportReport);
+
+// Custom Fields
+router.get('/custom-fields', customFieldController.getAll);
+router.post('/custom-fields', customFieldController.create);
+router.patch('/custom-fields/:id', customFieldController.update);
+router.delete('/custom-fields/:id', customFieldController.delete);
+
+// MIS Import
+router.post('/complaints/import', upload.single('file'), importController.importComplaints);
 
 module.exports = router;

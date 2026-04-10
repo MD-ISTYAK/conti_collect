@@ -28,36 +28,37 @@ const complaintSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
-  dealerId: {
+  dealerEntity: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: [true, 'Dealer ID is required'],
+    ref: 'Dealer',
+    required: [true, 'Dealer entity is required'],
+    index: true,
+  },
+  cfaEntity: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CFA',
     index: true,
   },
   productType: {
     type: String,
-    required: [true, 'Product type is required'],
     enum: PRODUCT_TYPES,
+    default: 'tire',
   },
   productName: {
     type: String,
-    required: [true, 'Product name is required'],
     trim: true,
     maxlength: 200,
+    default: 'Unknown',
   },
   quantity: {
     type: Number,
-    required: [true, 'Quantity is required'],
     min: 1,
-    validate: {
-      validator: Number.isInteger,
-      message: 'Quantity must be an integer',
-    },
+    default: 1,
   },
   reason: {
     type: String,
-    required: [true, 'Return reason is required'],
     enum: RETURN_REASONS,
+    default: 'other',
   },
   description: {
     type: String,
@@ -66,22 +67,12 @@ const complaintSchema = new mongoose.Schema({
   },
   images: {
     type: [String],
-    validate: {
-      validator: function (v) {
-        return v.length >= 1 && v.length <= 5;
-      },
-      message: 'Between 1 and 5 images are required',
-    },
+    default: [],
   },
   status: {
     type: String,
     enum: STATUSES,
     default: 'CREATED',
-    index: true,
-  },
-  cfaId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
     index: true,
   },
   rejectionReason: {
@@ -111,13 +102,56 @@ const complaintSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  proposedPickupDate: {
+    type: Date,
+  },
+  pickupProposedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  pickupScheduleStatus: {
+    type: String,
+    enum: ['NOT_SCHEDULED', 'PROPOSED', 'CONFIRMED'],
+    default: 'NOT_SCHEDULED',
+  },
   adminNotes: {
     type: String,
     trim: true,
   },
+  rescheduleRequests: [{
+    requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    role: { type: String, enum: ['dealer', 'cfa'] },
+    requestedAt: { type: Date, default: Date.now },
+    proposedDate: { type: Date },
+  }],
   timeline: [timelineEntrySchema],
   qrCode: {
     type: String,
+  },
+  customData: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
+
+  // MIS Import Tracking
+  misCreatedAt: {
+    type: Date,
+  },
+  misAdjustedAt: {
+    type: Date,
+  },
+  misImportedAt: {
+    type: Date,
+  },
+  misImportedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  source: {
+    type: String,
+    enum: ['manual', 'mis_import'],
+    default: 'manual',
   },
 }, {
   timestamps: true,
@@ -125,9 +159,10 @@ const complaintSchema = new mongoose.Schema({
 
 // Compound indexes for common queries
 complaintSchema.index({ status: 1, createdAt: -1 });
-complaintSchema.index({ dealerId: 1, status: 1 });
-complaintSchema.index({ cfaId: 1, status: 1 });
+complaintSchema.index({ dealerEntity: 1, status: 1 });
+complaintSchema.index({ cfaEntity: 1, status: 1 });
 complaintSchema.index({ createdAt: -1 });
+complaintSchema.index({ source: 1 });
 
 // Valid status transitions
 const VALID_TRANSITIONS = {

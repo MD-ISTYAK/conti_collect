@@ -12,6 +12,7 @@ import ComplaintDetail from './pages/Complaints/ComplaintDetail';
 import CFAManagement from './pages/CFAManagement';
 import DealerManagement from './pages/DealerManagement';
 import Reports from './pages/Reports';
+import CustomFieldManager from './pages/Settings/CustomFieldManager';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +45,7 @@ const App = () => {
               <Route path="cfa-management" element={<CFAManagement />} />
               <Route path="dealer-management" element={<DealerManagement />} />
               <Route path="reports" element={<Reports />} />
+              <Route path="field-management" element={<CustomFieldManager />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

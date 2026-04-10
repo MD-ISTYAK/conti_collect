@@ -54,17 +54,19 @@ const processRefundSchema = {
 
 const complaintQuerySchema = {
   query: Joi.object({
-    status: Joi.string().valid('CREATED', 'APPROVED', 'REJECTED', 'CFA_ASSIGNED', 'PICKED_UP', 'RECEIVED_AT_CFA', 'VERIFIED', 'REFUND_PROCESSED'),
-    dealerId: Joi.string(),
-    cfaId: Joi.string(),
-    productType: Joi.string().valid('tire', 'glass', 'motor_part', 'battery', 'other'),
-    dateFrom: Joi.date().iso(),
-    dateTo: Joi.date().iso(),
-    search: Joi.string().trim(),
+    status: Joi.string().valid('CREATED', 'APPROVED', 'REJECTED', 'CFA_ASSIGNED', 'PICKED_UP', 'RECEIVED_AT_CFA', 'VERIFIED', 'REFUND_PROCESSED')
+      .allow('', null),
+    dealerId: Joi.string().allow('', null),
+    cfaId: Joi.string().allow('', null),
+    productType: Joi.string().valid('tire', 'glass', 'motor_part', 'battery', 'other')
+      .allow('', null),
+    dateFrom: Joi.date().iso().allow('', null),
+    dateTo: Joi.date().iso().allow('', null),
+    search: Joi.string().trim().allow('', null),
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(20),
-    sortBy: Joi.string().default('createdAt'),
-    sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+    sortBy: Joi.string().default('createdAt').allow('', null),
+    sortOrder: Joi.string().valid('asc', 'desc').default('desc').allow('', null),
   }),
 };
 

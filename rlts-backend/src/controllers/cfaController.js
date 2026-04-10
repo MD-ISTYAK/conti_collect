@@ -9,16 +9,26 @@ const { sendPickupCompletedEmail } = require('../services/emailService');
 const { emitStatusChange, emitPickupCompleted, emitDashboardUpdate } = require('../services/socketService');
 const logger = require('../utils/logger');
 
+// Helper
+const getEntityUserIds = async (entityId, role) => {
+  const users = await User.find({ [`${role}Entity`]: entityId, isActive: true });
+  return users.map(u => u._id);
+};
+const getEntityUserEmails = async (entityId, role) => {
+  const users = await User.find({ [`${role}Entity`]: entityId, isActive: true });
+  return users.map(u => u.email);
+};
+
 /**
- * GET /api/cfa/assigned — Get all complaints assigned to this CFA
+ * GET /api/cfa/assigned — Get all complaints assigned to this CFA Entity
  */
 const getAssigned = async (req, res, next) => {
   try {
     const complaints = await Complaint.find({
-      cfaId: req.user._id,
+      cfaEntity: req.user.cfaEntity._id,
       status: { $in: ['CFA_ASSIGNED', 'PICKED_UP'] },
     })
-      .populate('dealerId', 'name email phone businessName address')
+      .populate('dealerEntity')
       .sort({ estimatedPickupDate: 1 });
 
     sendSuccess(res, 200, 'Assigned complaints retrieved', complaints);
@@ -33,19 +43,18 @@ const getAssigned = async (req, res, next) => {
 const submitPickup = async (req, res, next) => {
   try {
     const complaint = await Complaint.findById(req.params.id)
-      .populate('dealerId', 'name email');
+      .populate('dealerEntity');
     
     if (!complaint) return sendError(res, 404, 'Complaint not found.');
 
-    if (complaint.cfaId.toString() !== req.user._id.toString()) {
-      return sendError(res, 403, 'This complaint is not assigned to you.');
+    if (complaint.cfaEntity.toString() !== req.user.cfaEntity._id.toString()) {
+      return sendError(res, 403, 'This complaint is not assigned to your CFA.');
     }
 
     if (!complaint.canTransitionTo('PICKED_UP')) {
       return sendError(res, 422, `Cannot mark pickup. Complaint status is ${complaint.status}.`);
     }
 
-    // Validate all required proof elements
     if (!req.files?.pickupPhotos || req.files.pickupPhotos.length === 0) {
       return sendError(res, 400, 'At least 1 pickup photo is required.');
     }
@@ -59,19 +68,10 @@ const submitPickup = async (req, res, next) => {
     if (!gps || !gps.lat || !gps.lng) {
       return sendError(res, 400, 'GPS location is required.');
     }
-    if (gps.lat < -90 || gps.lat > 90 || gps.lng < -180 || gps.lng > 180) {
-      return sendError(res, 400, 'GPS coordinates are out of valid range.');
-    }
 
-    // Process uploads
-    const pickupPhotoUrls = await processUploads(
-      req.files.pickupPhotos, 'pickup-photos', complaint.complaintId
-    );
-    const signatureUrl = await processUploads(
-      req.files.signatureImage, 'signature', complaint.complaintId
-    );
+    const pickupPhotoUrls = await processUploads(req.files.pickupPhotos, 'pickup-photos', complaint.complaintId);
+    const signatureUrl = await processUploads(req.files.signatureImage, 'signature', complaint.complaintId);
 
-    // Create pickup proof
     const proof = await PickupProof.create({
       complaintId: complaint._id,
       pickedBy: req.user._id,
@@ -82,24 +82,31 @@ const submitPickup = async (req, res, next) => {
       pickupTime: new Date(),
     });
 
-    // Update complaint
     const before = { status: complaint.status };
     complaint.status = 'PICKED_UP';
     complaint.actualPickupDate = new Date();
-    complaint.addTimelineEntry('PICKED_UP', req.user._id, `Product collected by CFA: ${req.user.name}`);
+    complaint.addTimelineEntry('PICKED_UP', req.user._id, `Product collected by CFA user: ${req.user.name}`);
     await complaint.save();
 
-    // Notify dealer and admins
     const admins = await User.find({ role: 'admin', isActive: true });
     const adminEmails = admins.map(a => a.email);
-    sendPickupCompletedEmail(complaint.dealerId.email, adminEmails, complaint);
+    
+    const dealerEmails = await getEntityUserEmails(complaint.dealerEntity._id, 'dealer');
+    const dealerUserIds = await getEntityUserIds(complaint.dealerEntity._id, 'dealer');
 
-    createNotification({
-      userId: complaint.dealerId._id,
-      title: 'Product Collected',
-      body: `Your product for complaint ${complaint.complaintId} has been collected.`,
-      type: 'pickup',
-      complaintId: complaint._id,
+    if (dealerEmails.length > 0) {
+      sendPickupCompletedEmail(dealerEmails[0], adminEmails, complaint);
+    }
+
+    dealerUserIds.forEach(userId => {
+      createNotification({
+        userId,
+        title: 'Product Collected',
+        body: `Your product for complaint ${complaint.complaintId} has been collected.`,
+        type: 'pickup',
+        complaintId: complaint._id,
+      });
+      emitStatusChange(complaint.complaintId, 'PICKED_UP', userId);
     });
 
     admins.forEach(admin => {
@@ -110,10 +117,8 @@ const submitPickup = async (req, res, next) => {
         type: 'pickup',
         complaintId: complaint._id,
       });
+      emitDashboardUpdate();
     });
-
-    emitPickupCompleted(complaint.complaintId, req.user.name, complaint.dealerId._id);
-    emitDashboardUpdate();
 
     writeAuditLog({
       action: 'PICKUP_COMPLETED',
@@ -139,8 +144,8 @@ const submitReceive = async (req, res, next) => {
     const complaint = await Complaint.findById(req.params.id);
     if (!complaint) return sendError(res, 404, 'Complaint not found.');
 
-    if (complaint.cfaId.toString() !== req.user._id.toString()) {
-      return sendError(res, 403, 'This complaint is not assigned to you.');
+    if (complaint.cfaEntity.toString() !== req.user.cfaEntity._id.toString()) {
+      return sendError(res, 403, 'This complaint is not assigned to your CFA.');
     }
 
     if (!complaint.canTransitionTo('RECEIVED_AT_CFA')) {
@@ -152,14 +157,10 @@ const submitReceive = async (req, res, next) => {
     }
 
     const { receivedQuantity, conditionNotes } = req.body;
-    const quantity = parseInt(receivedQuantity);
+    const quantity = parseInt(receivedQuantity) || complaint.quantity;
 
-    // Process warehouse photos
-    const warehousePhotoUrls = await processUploads(
-      req.files, 'warehouse-photos', complaint.complaintId
-    );
+    const warehousePhotoUrls = await processUploads(req.files, 'warehouse-photos', complaint.complaintId);
 
-    // Update pickup proof with warehouse data
     const proof = await PickupProof.findOne({ complaintId: complaint._id });
     if (proof) {
       proof.warehousePhotos = warehousePhotoUrls;
@@ -168,7 +169,6 @@ const submitReceive = async (req, res, next) => {
       await proof.save();
     }
 
-    // Update complaint
     const before = { status: complaint.status };
     const quantityMismatch = quantity !== complaint.quantity;
     const note = quantityMismatch
@@ -180,7 +180,6 @@ const submitReceive = async (req, res, next) => {
     complaint.addTimelineEntry('RECEIVED_AT_CFA', req.user._id, note);
     await complaint.save();
 
-    // Notify admins
     const admins = await User.find({ role: 'admin', isActive: true });
     admins.forEach(admin => {
       createNotification({
@@ -192,7 +191,11 @@ const submitReceive = async (req, res, next) => {
       });
     });
 
-    emitStatusChange(complaint.complaintId, 'RECEIVED_AT_CFA', complaint.dealerId);
+    const dealerUserIds = await getEntityUserIds(complaint.dealerEntity, 'dealer');
+    dealerUserIds.forEach(userId => {
+       emitStatusChange(complaint.complaintId, 'RECEIVED_AT_CFA', userId);
+    });
+    
     emitDashboardUpdate();
 
     writeAuditLog({
@@ -219,15 +222,15 @@ const scanQR = async (req, res, next) => {
     const { complaintId } = req.params;
 
     const complaint = await Complaint.findOne({ complaintId })
-      .populate('dealerId', 'name email phone businessName address')
-      .select('complaintId productType productName quantity status dealerId estimatedPickupDate');
+      .populate('dealerEntity')
+      .select('complaintId productType productName quantity status dealerEntity estimatedPickupDate cfaEntity');
 
     if (!complaint) {
       return sendError(res, 404, 'Invalid QR code. Complaint not found.');
     }
 
-    if (complaint.cfaId && complaint.cfaId.toString() !== req.user._id.toString()) {
-      return sendError(res, 403, 'This complaint is not assigned to you.');
+    if (complaint.cfaEntity && complaint.cfaEntity.toString() !== req.user.cfaEntity._id.toString()) {
+      return sendError(res, 403, 'This complaint is not assigned to your CFA.');
     }
 
     if (complaint.status !== 'CFA_ASSIGNED') {

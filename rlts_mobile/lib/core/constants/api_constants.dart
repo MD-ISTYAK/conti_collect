@@ -1,5 +1,7 @@
 class ApiConstants {
-  static const String baseUrl = 'http://192.168.1.19:5000/api'; // Android emulator Wait! I will rename this to reflect Physical Device
+  // static const String baseUrl = 'https://conti-collect.onrender.com/api';
+  static const String baseUrl =
+      'http://192.168.1.19:5000/api'; // Physical Device / Emulator on same network
   // static const String baseUrl = 'http://10.0.2.2:5000/api'; // Android emulator
 
   // Auth
@@ -30,6 +32,10 @@ class ApiConstants {
   static String complaintTimeline(String id) => '/complaints/$id/timeline';
   static String complaintProof(String id) => '/complaints/$id/proof';
   static String complaintQr(String id) => '/complaints/$id/qr';
+  static String complaintReschedule(String id) =>
+      '/complaints/$id/request-reschedule';
+  static String proposePickup(String id) => '/complaints/$id/propose-pickup';
+  static String confirmPickup(String id) => '/complaints/$id/confirm-pickup';
 }
 
 class AppConstants {

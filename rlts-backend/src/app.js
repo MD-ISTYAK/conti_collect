@@ -40,6 +40,9 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/complaints', require('./routes/complaints'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/admin/users', require('./routes/users'));
+app.use('/api/admin/cfa-master', require('./routes/cfaMaster'));
+app.use('/api/admin/dealer-master', require('./routes/dealerMaster'));
+app.use('/api/admin/entity-users', require('./routes/entityUsers'));
 app.use('/api/cfa', require('./routes/cfa'));
 app.use('/api/notifications', require('./routes/notifications'));
 

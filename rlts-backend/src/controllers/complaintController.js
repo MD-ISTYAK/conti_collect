@@ -304,26 +304,26 @@ const requestReschedule = async (req, res, next) => {
     }
 
     const now = new Date();
-    if (!complaint.estimatedPickupDate) {
-      return sendError(res, 400, 'No pickup date was scheduled yet.');
-    }
-    if (now <= complaint.estimatedPickupDate) {
-      return sendError(res, 400, 'The scheduled pickup date has not passed yet.');
-    }
-
-    const { proposedDate } = req.body;
+    const { proposedDate, reason } = req.body;
 
     complaint.rescheduleRequests.push({
       requestedBy: req.user._id,
       role: req.user.role,
       requestedAt: now,
       proposedDate: proposedDate ? new Date(proposedDate) : undefined,
+      reason,
     });
 
+    if (proposedDate) {
+      complaint.proposedPickupDate = new Date(proposedDate);
+      complaint.pickupProposedBy = req.user._id;
+      complaint.pickupScheduleStatus = 'PROPOSED';
+    }
+
     complaint.addTimelineEntry(
-      complaint.status,
+      'RESCHEDULE_REQUESTED',
       req.user._id,
-      `Reschedule requested by ${req.user.role === 'dealer' ? 'Dealer' : 'CFA'} user: ${req.user.name}`
+      `Reschedule requested by ${req.user.role === 'dealer' ? 'Dealer' : 'CFA'} user: ${req.user.name}.${reason ? ' Reason: ' + reason : ''}`
     );
 
     await complaint.save();
@@ -384,7 +384,7 @@ const proposePickup = async (req, res, next) => {
     complaint.pickupScheduleStatus = 'PROPOSED';
 
     complaint.addTimelineEntry(
-      complaint.status,
+      'PICKUP_PROPOSED',
       req.user._id,
       `Pickup proposed for ${new Date(proposedDate).toLocaleDateString('en-IN')} by ${req.user.role.toUpperCase()} user: ${req.user.name}`
     );
@@ -443,7 +443,7 @@ const confirmPickup = async (req, res, next) => {
     complaint.pickupScheduleStatus = 'CONFIRMED';
 
     complaint.addTimelineEntry(
-      complaint.status,
+      'PICKUP_CONFIRMED',
       req.user._id,
       `Pickup date confirmed for ${complaint.estimatedPickupDate.toLocaleDateString('en-IN')} by ${req.user.role.toUpperCase()} user: ${req.user.name}`
     );

@@ -2,12 +2,12 @@ import { format, formatDistanceToNow, parseISO } from 'date-fns';
 
 export const formatDate = (date) => {
   if (!date) return '—';
-  return format(new Date(date), 'dd MMM yyyy');
+  return format(new Date(date), 'M/d/yyyy, h:mm a');
 };
 
 export const formatDateTime = (date) => {
   if (!date) return '—';
-  return format(new Date(date), 'dd MMM yyyy, hh:mm a');
+  return format(new Date(date), 'M/d/yyyy, h:mm a');
 };
 
 export const formatRelativeTime = (date) => {
@@ -33,6 +33,11 @@ export const statusConfig = {
   VERIFIED: { label: 'Verified', color: '#EAB308', bg: '#FEFCE8', textColor: '#A16207' },
   REFUND_PROCESSED: { label: 'Refunded', color: '#10B981', bg: '#ECFDF5', textColor: '#047857' },
   REJECTED: { label: 'Rejected', color: '#EF4444', bg: '#FEF2F2', textColor: '#B91C1C' },
+  PICKUP_SCHEDULED: { label: 'Pickup Scheduled', color: '#8B5CF6', bg: '#F5F3FF', textColor: '#6D28D9' },
+  SCHEDULE_UPDATED: { label: 'Schedule Updated', color: '#6366F1', bg: '#EEF2FF', textColor: '#4338CA' },
+  RESCHEDULE_REQUESTED: { label: 'Reschedule Req', color: '#F97316', bg: '#FFF7ED', textColor: '#C2410C' },
+  PICKUP_PROPOSED: { label: 'Pickup Proposed', color: '#D946EF', bg: '#FDF4FF', textColor: '#A21CAF' },
+  PICKUP_CONFIRMED: { label: 'Pickup Confirmed', color: '#0EA5E9', bg: '#F0F9FF', textColor: '#0369A1' },
 };
 
 export const getStatusConfig = (status) => statusConfig[status] || { label: status, color: '#94A3B8', bg: '#F8FAFC', textColor: '#475569' };

@@ -57,9 +57,12 @@ class ComplaintRepository {
     return response.data['data'];
   }
 
-  Future<void> requestReschedule(String id, {String? proposedDate}) async {
+  Future<void> requestReschedule(String id, {String? proposedDate, String? reason}) async {
     try {
-      final data = proposedDate != null ? {'proposedDate': proposedDate} : null;
+      final data = <String, dynamic>{};
+      if (proposedDate != null) data['proposedDate'] = proposedDate;
+      if (reason != null) data['reason'] = reason;
+      
       await _api.post(ApiConstants.complaintReschedule(id), data: data);
     } catch (e) {
       print('requestReschedule error: $e');

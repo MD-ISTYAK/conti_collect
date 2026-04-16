@@ -9,6 +9,8 @@ const {
   getDashboard,
   getAnalytics,
   exportReport,
+  schedulePickup,
+  deleteComplaints,
 } = require('../controllers/adminController');
 const customFieldController = require('../controllers/customFieldController');
 const importController = require('../controllers/importController');
@@ -28,11 +30,13 @@ const {
 // All admin routes require admin role
 router.use(auth, roleCheck('admin'));
 
+router.post('/complaints/delete', deleteComplaints);
 router.post('/complaints/:id/approve', validate(approveComplaintSchema), approveComplaint);
 router.post('/complaints/:id/reject', validate(rejectComplaintSchema), rejectComplaint);
 router.post('/complaints/:id/assign-cfa', validate(assignCfaSchema), assignCFA);
 router.post('/complaints/:id/verify', validate(verifyComplaintSchema), verifyComplaint);
 router.post('/complaints/:id/refund', validate(processRefundSchema), processRefund);
+router.post('/complaints/:id/schedule-pickup', schedulePickup);
 router.get('/dashboard', getDashboard);
 router.get('/analytics', getAnalytics);
 router.get('/reports/export', exportReport);

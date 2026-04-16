@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/cfa_repository.dart';
 import '../../data/repositories/complaint_repository.dart';
@@ -106,7 +107,7 @@ class _CfaDealerComplaintsScreenState extends State<CfaDealerComplaintsScreen> {
       final all = await repo.getAssigned();
       final dealerId = _dealer?['_id'];
       _allComplaints = all.where((c) {
-        final d = c['dealerId'];
+        final d = c['dealerEntity'];
         if (d is Map) return d['_id'] == dealerId;
         return d == dealerId;
       }).toList();
@@ -146,21 +147,29 @@ class _CfaDealerComplaintsScreenState extends State<CfaDealerComplaintsScreen> {
     }
   }
 
-  Future<void> _requestReschedule(String id) async {
+  Future<void> _requestReschedule(String id, {bool isPropose = false}) async {
     final now = DateTime.now();
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: now.add(const Duration(days: 1)),
       firstDate: now,
       lastDate: now.add(const Duration(days: 60)),
-      helpText: 'Select proposed pickup date',
+      helpText: isPropose ? 'Select proposed pickup date' : 'Select reschedule date',
+      fieldHintText: 'M/d/yyyy',
+      builder: (context, child) {
+        return Localizations.override(
+          context: context,
+          locale: const Locale('en', 'US'),
+          child: child,
+        );
+      },
     );
     if (pickedDate == null || !mounted) return;
 
     final pickedTime = await showTimePicker(
       context: context,
       initialTime: const TimeOfDay(hour: 10, minute: 0),
-      helpText: 'Select proposed pickup time',
+      helpText: isPropose ? 'Select proposed pickup time' : 'Select reschedule time',
     );
     if (pickedTime == null || !mounted) return;
 
@@ -172,19 +181,52 @@ class _CfaDealerComplaintsScreenState extends State<CfaDealerComplaintsScreen> {
       pickedTime.minute,
     );
 
+    String reason = '';
+    if (!isPropose) {
+      final reasonSubmitted = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Reschedule Reason'),
+            content: TextField(
+              onChanged: (val) => reason = val,
+              decoration: const InputDecoration(hintText: 'Enter reason for rescheduling...'),
+              maxLines: 3,
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Submit')),
+            ],
+          );
+        },
+      );
+
+      if (reasonSubmitted != true || !mounted) return;
+    }
+
     try {
       showDialog(
           context: context,
           barrierDismissible: false,
           builder: (c) => const Center(child: CircularProgressIndicator()));
-      await ComplaintRepository().proposePickup(
-        id,
-        proposedDateTime.toIso8601String(),
-      );
+          
+      if (isPropose) {
+        await ComplaintRepository().proposePickup(
+          id,
+          proposedDateTime.toIso8601String(),
+        );
+      } else {
+        await ComplaintRepository().requestReschedule(
+          id,
+          proposedDate: proposedDateTime.toIso8601String(),
+          reason: reason,
+        );
+      }
+      
       if (mounted) Navigator.pop(context);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Pickup proposed!'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(isPropose ? 'Pickup proposed!' : 'Reschedule requested!'),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating));
       }
@@ -217,8 +259,10 @@ class _CfaDealerComplaintsScreenState extends State<CfaDealerComplaintsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dealerName = _dealer?['name'] ?? 'Dealer';
-    final businessName = _dealer?['businessName'];
+    final company = _dealer?['company'];
+    final code = _dealer?['code'];
+    final dealerName = (company != null && company.isNotEmpty) ? company : (code ?? 'Dealer');
+    final subText = code != null ? 'AG: $code' : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -228,8 +272,8 @@ class _CfaDealerComplaintsScreenState extends State<CfaDealerComplaintsScreen> {
             Text(dealerName,
                 style:
                     const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            if (businessName != null)
-              Text(businessName,
+            if (subText != null && subText != dealerName)
+              Text(subText,
                   style:
                       TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
           ],
@@ -456,9 +500,8 @@ class _CfaDealerComplaintsScreenState extends State<CfaDealerComplaintsScreen> {
 
     String? pickupDateStr;
     if (complaint['estimatedPickupDate'] != null) {
-      final d = DateTime.parse(complaint['estimatedPickupDate']);
-      pickupDateStr =
-          '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+      final d = DateTime.parse(complaint['estimatedPickupDate']).toLocal();
+      pickupDateStr = DateFormat('M/d/yyyy, h:mm a').format(d);
     }
 
     return Card(
@@ -576,22 +619,32 @@ class _CfaDealerComplaintsScreenState extends State<CfaDealerComplaintsScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () => _confirmPickup(complaint['_id']),
                     icon: const Icon(Icons.check, size: 16),
-                    label: const Text('Confirm Dealer\'s Schedule'),
+                    label: const Text('Confirm Schedule'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primary,
                       foregroundColor: Colors.white,
                     ),
                   ),
                 ),
-              ] else if (isMissed || (status == 'CFA_ASSIGNED' && complaint['estimatedPickupDate'] == null)) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _requestReschedule(complaint['_id'], isPropose: false),
+                    icon: const Icon(Icons.calendar_month, size: 14),
+                    label: const Text('Request Reschedule'),
+                    style: OutlinedButton.styleFrom(foregroundColor: AppTheme.primary),
+                  ),
+                ),
+              ] else if (status == 'CFA_ASSIGNED') ...[
                 const SizedBox(height: 10),
                 SizedBox(
                   height: 36,
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () => _requestReschedule(complaint['_id']),
+                    onPressed: () => _requestReschedule(complaint['_id'], isPropose: complaint['estimatedPickupDate'] == null),
                     icon: const Icon(Icons.calendar_month, size: 14),
-                    label: Text(isMissed ? 'Request Reschedule' : 'Propose Schedule',
+                    label: Text(complaint['estimatedPickupDate'] == null ? 'Propose Schedule' : 'Request Reschedule',
                         style: const TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppTheme.primary,

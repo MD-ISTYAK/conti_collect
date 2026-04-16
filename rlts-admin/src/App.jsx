@@ -10,7 +10,9 @@ import Dashboard from './pages/Dashboard';
 import ComplaintList from './pages/Complaints/ComplaintList';
 import ComplaintDetail from './pages/Complaints/ComplaintDetail';
 import CFAManagement from './pages/CFAManagement';
+import CFADetail from './pages/CFADetail';
 import DealerManagement from './pages/DealerManagement';
+import DealerDetail from './pages/DealerDetail';
 import Reports from './pages/Reports';
 import CustomFieldManager from './pages/Settings/CustomFieldManager';
 
@@ -43,7 +45,9 @@ const App = () => {
               <Route path="complaints" element={<ComplaintList />} />
               <Route path="complaints/:id" element={<ComplaintDetail />} />
               <Route path="cfa-management" element={<CFAManagement />} />
+              <Route path="cfa-management/:id" element={<CFADetail />} />
               <Route path="dealer-management" element={<DealerManagement />} />
+              <Route path="dealer-management/:id" element={<DealerDetail />} />
               <Route path="reports" element={<Reports />} />
               <Route path="field-management" element={<CustomFieldManager />} />
             </Route>

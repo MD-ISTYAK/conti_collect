@@ -9,6 +9,9 @@ class StatusBadge extends StatelessWidget {
     'CREATED': 'Created', 'APPROVED': 'Approved', 'CFA_ASSIGNED': 'Assigned',
     'PICKED_UP': 'Picked Up', 'RECEIVED_AT_CFA': 'Received', 'VERIFIED': 'Verified',
     'REFUND_PROCESSED': 'Refunded', 'REJECTED': 'Rejected',
+    'PICKUP_SCHEDULED': 'Pickup Scheduled', 'SCHEDULE_UPDATED': 'Schedule Updated', 
+    'RESCHEDULE_REQUESTED': 'Reschedule Requested',
+    'PICKUP_PROPOSED': 'Pickup Proposed', 'PICKUP_CONFIRMED': 'Pickup Confirmed'
   };
 
   @override

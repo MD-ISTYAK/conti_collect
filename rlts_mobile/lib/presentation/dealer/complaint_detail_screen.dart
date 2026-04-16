@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/complaint_repository.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -29,7 +30,7 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
     } catch (e) { setState(() => _loading = false); }
   }
 
-  Future<void> _requestReschedule() async {
+  Future<void> _requestReschedule({bool isPropose = false}) async {
     final complaint = _complaint;
     if (complaint == null) return;
 
@@ -40,7 +41,14 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
       initialDate: now.add(const Duration(days: 1)),
       firstDate: now,
       lastDate: now.add(const Duration(days: 60)),
-      helpText: 'Select proposed pickup date',
+      helpText: isPropose ? 'Select proposed pickup date' : 'Select reschedule date',
+      builder: (context, child) {
+        return Localizations.override(
+          context: context,
+          locale: const Locale('en', 'US'),
+          child: child,
+        );
+      },
     );
     if (pickedDate == null || !mounted) return;
 
@@ -48,7 +56,7 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
     final pickedTime = await showTimePicker(
       context: context,
       initialTime: const TimeOfDay(hour: 10, minute: 0),
-      helpText: 'Select proposed pickup time',
+      helpText: isPropose ? 'Select proposed pickup time' : 'Select reschedule time',
     );
     if (pickedTime == null || !mounted) return;
 
@@ -56,59 +64,54 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
       pickedDate.year, pickedDate.month, pickedDate.day,
       pickedTime.hour, pickedTime.minute,
     );
+
+    String reason = '';
+    if (!isPropose) {
+      final reasonSubmitted = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Reschedule Reason'),
+            content: TextField(
+              onChanged: (val) => reason = val,
+              decoration: const InputDecoration(hintText: 'Enter reason for rescheduling...'),
+              maxLines: 3,
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Submit')),
+            ],
+          );
+        },
+      );
+
+      if (reasonSubmitted != true || !mounted) return;
+    }
 
     // Step 3: Submit
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
-      await ComplaintRepository().requestReschedule(
-        complaint['_id'],
-        proposedDate: proposedDateTime.toIso8601String(),
-      );
+      
+      if (isPropose) {
+        await ComplaintRepository().proposePickup(complaint['_id'], proposedDateTime.toIso8601String());
+      } else {
+        await ComplaintRepository().requestReschedule(
+          complaint['_id'],
+          proposedDate: proposedDateTime.toIso8601String(),
+          reason: reason,
+        );
+      }
+
       if (mounted) Navigator.pop(context);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Reschedule requested successfully!'), backgroundColor: Colors.green.shade600, behavior: SnackBarBehavior.floating));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isPropose ? 'Pickup date proposed!' : 'Reschedule requested successfully!'), backgroundColor: Colors.green.shade600, behavior: SnackBarBehavior.floating));
       _load();
     } catch (e) {
       if (mounted) Navigator.pop(context);
-      String errorMsg = 'Failed to request reschedule.';
+      String errorMsg = isPropose ? 'Failed to propose pickup.' : 'Failed to request reschedule.';
       if (e is DioException) {
         errorMsg = e.response?.data?['message'] ?? e.message ?? errorMsg;
       }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $errorMsg'), backgroundColor: Colors.red.shade600, behavior: SnackBarBehavior.floating));
-    }
-  }
-
-  Future<void> _proposePickup() async {
-    final now = DateTime.now();
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: now.add(const Duration(days: 1)),
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 60)),
-      helpText: 'Select proposed pickup date',
-    );
-    if (pickedDate == null || !mounted) return;
-
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 10, minute: 0),
-      helpText: 'Select proposed pickup time',
-    );
-    if (pickedTime == null || !mounted) return;
-
-    final proposedDateTime = DateTime(
-      pickedDate.year, pickedDate.month, pickedDate.day,
-      pickedTime.hour, pickedTime.minute,
-    );
-
-    try {
-      showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
-      await ComplaintRepository().proposePickup(_complaint!['_id'], proposedDateTime.toIso8601String());
-      if (mounted) Navigator.pop(context);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pickup date proposed!'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
-      _load();
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
     }
   }
 
@@ -127,22 +130,9 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isRescheduleEligible = _complaint != null &&
-        ['APPROVED', 'CFA_ASSIGNED'].contains(_complaint!['status']) &&
-        _complaint!['estimatedPickupDate'] != null &&
-        DateTime.parse(_complaint!['estimatedPickupDate']).isBefore(DateTime.now());
-
     return Scaffold(
       appBar: AppBar(
         title: Text(_complaint?['complaintId'] ?? 'Details'),
-        actions: [
-          if (isRescheduleEligible)
-            TextButton.icon(
-              onPressed: _requestReschedule,
-              icon: const Icon(Icons.refresh, color: Colors.white, size: 18),
-              label: const Text('Reschedule', style: TextStyle(color: Colors.white)),
-            ),
-        ],
       ),
       body: _loading ? const Center(child: CircularProgressIndicator())
         : _complaint == null ? const Center(child: Text('Not found'))
@@ -150,10 +140,9 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
             Center(child: StatusBadge(status: _complaint!['status'] ?? '')),
             const SizedBox(height: 16),
             _Section('Product Details', [
-              _InfoRow('Type', _complaint!['productType']),
+              _InfoRow('Type', _capitalize(_complaint!['productType'])),
               _InfoRow('Name', _complaint!['productName']),
               _InfoRow('Quantity', '${_complaint!['quantity']}'),
-              _InfoRow('Reason', _complaint!['reason']),
               if (_complaint!['description'] != null) _InfoRow('Description', _complaint!['description']),
             ]),
             _buildScheduleSection(),
@@ -166,19 +155,28 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
                 Text(_complaint!['rejectionReason'], style: const TextStyle(color: Colors.red)),
               ]),
             ),
-            if (_complaint!['refundAmount'] != null) Container(
-              margin: const EdgeInsets.only(top: 12), padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(12)),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('💰 Refund', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green)),
-                Text('₹${_complaint!['refundAmount']}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.green)),
-                if (_complaint!['refundReference'] != null) Text('Ref: ${_complaint!['refundReference']}', style: TextStyle(color: Colors.green.shade700)),
-              ]),
-            ),
             const SizedBox(height: 16),
             const Text('Timeline', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
-            ...(_complaint!['timeline'] as List? ?? []).map((e) => _TimelineEntry(e)),
+            ...(() {
+              final timeline = List<Map<String,dynamic>>.from(_complaint!['timeline'] ?? []);
+              final hasCreated = timeline.any((t) => t['status'] == 'CREATED');
+              if (!hasCreated) {
+                if (_complaint!['misCreatedAt'] != null) {
+                  timeline.insert(0, {
+                    'status': 'CREATED',
+                    'timestamp': _complaint!['misCreatedAt'],
+                    'note': 'Complaint Created (MIS)',
+                  });
+                } else if (_complaint!['createdAt'] != null) {
+                  timeline.insert(0, {
+                    'status': 'CREATED',
+                    'timestamp': _complaint!['createdAt'],
+                  });
+                }
+              }
+              return timeline;
+            }()).map((e) => _TimelineEntry(e)),
           ])),
     );
   }
@@ -192,32 +190,34 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
     final scheduleStatus = _complaint!['pickupScheduleStatus'] ?? 'NOT_SCHEDULED';
     final proposedBy = _complaint!['pickupProposedBy'];
     final isProposer = _currentUser != null && proposedBy != null && proposedBy == _currentUser!['_id'];
-    final proposedDate = _complaint!['proposedPickupDate'] != null ? DateTime.parse(_complaint!['proposedPickupDate']) : null;
-    final confirmedDate = _complaint!['estimatedPickupDate'] != null ? DateTime.parse(_complaint!['estimatedPickupDate']) : null;
+    final proposedDate = _complaint!['proposedPickupDate'] != null ? DateTime.parse(_complaint!['proposedPickupDate']).toLocal() : null;
+    final confirmedDate = _complaint!['estimatedPickupDate'] != null ? DateTime.parse(_complaint!['estimatedPickupDate']).toLocal() : null;
+
+    final dateFormat = DateFormat('M/d/yyyy, h:mm a');
 
     String statusText = 'Not Scheduled';
     Color statusColor = AppTheme.textMuted;
     List<Widget> actions = [];
 
     if (scheduleStatus == 'CONFIRMED' && confirmedDate != null) {
-      statusText = 'Confirmed for ${confirmedDate.day}/${confirmedDate.month}/${confirmedDate.year}';
+      statusText = 'Confirmed for ${dateFormat.format(confirmedDate)}';
       statusColor = AppTheme.success;
-      actions.add(OutlinedButton(onPressed: _proposePickup, child: const Text('Change Schedule')));
+      actions.add(OutlinedButton(onPressed: () => _requestReschedule(isPropose: false), child: const Text('Change Schedule')));
     } else if (scheduleStatus == 'PROPOSED' && proposedDate != null) {
       if (isProposer) {
         statusText = 'Waiting for response...';
         statusColor = AppTheme.warning;
-        actions.add(OutlinedButton(onPressed: _proposePickup, child: const Text('Edit Proposal')));
+        actions.add(OutlinedButton(onPressed: () => _requestReschedule(isPropose: false), child: const Text('Edit Proposal')));
       } else {
         final otherRole = _currentUser?['role'] == 'dealer' ? 'CFA' : 'Dealer';
-        statusText = '$otherRole proposed ${proposedDate.day}/${proposedDate.month}/${proposedDate.year}';
+        statusText = '$otherRole proposed ${dateFormat.format(proposedDate)}';
         statusColor = AppTheme.primary;
         actions.add(ElevatedButton(onPressed: _confirmPickup, child: const Text('Confirm Schedule')));
         actions.add(const SizedBox(height: 8));
-        actions.add(OutlinedButton(onPressed: _proposePickup, child: const Text('Propose Different Date')));
+        actions.add(OutlinedButton(onPressed: () => _requestReschedule(isPropose: false), child: const Text('Propose Different Date')));
       }
     } else {
-      actions.add(ElevatedButton(onPressed: _proposePickup, child: const Text('Schedule Pickup')));
+      actions.add(ElevatedButton(onPressed: () => _requestReschedule(isPropose: true), child: const Text('Schedule Pickup')));
     }
 
     return _Section('Pickup Schedule', [
@@ -231,6 +231,14 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
         ...actions,
       ]
     ]);
+  }
+
+  String _capitalize(String? text) {
+    if (text == null || text.isEmpty) return '—';
+    return text.split('_').map((word) {
+      if (word.isEmpty) return '';
+      return '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}';
+    }).join(' ');
   }
 }
 
@@ -255,13 +263,28 @@ class _InfoRow extends StatelessWidget {
 class _TimelineEntry extends StatelessWidget {
   final Map<String, dynamic> entry;
   const _TimelineEntry(this.entry);
-  @override Widget build(BuildContext context) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Column(children: [Container(width: 12, height: 12, decoration: BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle)), Container(width: 2, height: 30, color: Colors.grey.shade200)]),
-    const SizedBox(width: 12),
-    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      StatusBadge(status: entry['status'] ?? ''),
-      const SizedBox(height: 2),
-      if (entry['note'] != null) Text(entry['note'], style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
-    ])),
-  ]));
+  @override Widget build(BuildContext context) {
+    String formattedTime = '';
+    if (entry['timestamp'] != null) {
+      final dt = DateTime.parse(entry['timestamp']).toLocal();
+      if (entry['note'] != null && entry['note'].toString().contains('MIS')) {
+        formattedTime = DateFormat('M/d/yyyy').format(dt);
+      } else {
+        formattedTime = DateFormat('M/d/yyyy, h:mm a').format(dt);
+      }
+    }
+    
+    return Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Column(children: [Container(width: 12, height: 12, decoration: const BoxDecoration(color: AppTheme.primary, shape: BoxShape.circle)), Container(width: 2, height: 40, color: Colors.grey.shade200)]),
+      const SizedBox(width: 12),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        StatusBadge(status: entry['status'] ?? ''),
+        if (formattedTime.isNotEmpty) Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 2),
+          child: Text(formattedTime, style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w500)),
+        ),
+        if (entry['note'] != null) Text(entry['note'], style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
+      ])),
+    ]));
+  }
 }

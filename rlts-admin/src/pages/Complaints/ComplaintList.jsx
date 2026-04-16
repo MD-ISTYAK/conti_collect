@@ -66,6 +66,7 @@ const BASE_AVAILABLE_FIELDS = [
 ];
 
 const DEFAULT_COLUMNS = [
+  { id: 'default-19', fieldId: 'status', customLabel: 'Current Status' },
   { id: 'default-1', fieldId: 'complaintId', customLabel: 'Complaint No. Case No' },
   { id: 'default-3', fieldId: 'identification_no', customLabel: 'Identification No.' },
   { id: 'default-4', fieldId: 'productName', customLabel: 'Articale Number' },
@@ -83,7 +84,6 @@ const DEFAULT_COLUMNS = [
   { id: 'default-16', fieldId: 'refundAmount', customLabel: 'Credit Value Net' },
   { id: 'default-17', fieldId: 'mis_status', customLabel: 'Status' },
   { id: 'default-18', fieldId: 'status_remark', customLabel: 'Status Remark' },
-  { id: 'default-19', fieldId: 'status', customLabel: 'Current Status' },
 ];
 
 const columnHelper = createColumnHelper();
@@ -120,15 +120,15 @@ const ComplaintList = () => {
 
   // Table Configuration
   const [userColumns, setUserColumns] = useState(() => {
-    const saved = localStorage.getItem('complaints_user_columns_v9');
+    const saved = localStorage.getItem('complaints_user_columns_v10');
     return saved ? JSON.parse(saved) : DEFAULT_COLUMNS;
   });
   const [columnVisibility, setColumnVisibility] = useState(() => {
-    const saved = localStorage.getItem('complaints_visibility_v9');
+    const saved = localStorage.getItem('complaints_visibility_v10');
     return saved ? JSON.parse(saved) : {};
   });
   const [columnSizing, setColumnSizing] = useState(() => {
-    const saved = localStorage.getItem('complaints_sizing_v9');
+    const saved = localStorage.getItem('complaints_sizing_v10');
     return saved ? JSON.parse(saved) : {};
   });
   const [sorting, setSorting] = useState([]);
@@ -139,14 +139,35 @@ const ComplaintList = () => {
     page: parseInt(searchParams.get('page') || '1'),
   });
 
+  const [rowSelection, setRowSelection] = useState({});
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteSelected = async () => {
+    const selectedIds = Object.keys(rowSelection);
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} complaint(s)? This action cannot be undone.`)) return;
+    
+    setIsDeleting(true);
+    try {
+      await api.post('/admin/complaints/delete', { ids: selectedIds });
+      toast.success(`${selectedIds.length} complaint(s) deleted successfully.`);
+      setRowSelection({});
+      loadData();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to delete complaints');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   useEffect(() => {
-    localStorage.setItem('complaints_user_columns_v9', JSON.stringify(userColumns));
+    localStorage.setItem('complaints_user_columns_v10', JSON.stringify(userColumns));
   }, [userColumns]);
   useEffect(() => {
-    localStorage.setItem('complaints_visibility_v9', JSON.stringify(columnVisibility));
+    localStorage.setItem('complaints_visibility_v10', JSON.stringify(columnVisibility));
   }, [columnVisibility]);
   useEffect(() => {
-    localStorage.setItem('complaints_sizing_v9', JSON.stringify(columnSizing));
+    localStorage.setItem('complaints_sizing_v10', JSON.stringify(columnSizing));
   }, [columnSizing]);
 
   const loadData = async () => {
@@ -183,7 +204,7 @@ const ComplaintList = () => {
   }, [filters, sorting]);
 
   const columns = useMemo(() => {
-    return userColumns.map(colDef => {
+    const cols = userColumns.map(colDef => {
       const field = availableFields.find(f => f.id === colDef.fieldId);
       if (!field) return null;
 
@@ -197,7 +218,11 @@ const ComplaintList = () => {
 
           switch (field.type) {
             case 'id': return <span className="text-sm font-semibold text-blue-600">{value}</span>;
-            case 'status': return <StatusChip status={value} />;
+            case 'status': {
+              const timeline = info.row.original.timeline || [];
+              const latestStatus = timeline.length > 0 ? timeline[timeline.length - 1].status : value;
+              return <StatusChip status={latestStatus} />;
+            }
             case 'date': return formatDate(value);
             case 'currency': return `₹${Number(value).toLocaleString()}`;
             case 'productType': return productTypeLabels[value] || value;
@@ -206,15 +231,47 @@ const ComplaintList = () => {
         },
       });
     }).filter(Boolean);
+
+    // Unshift select column
+    cols.unshift(
+      columnHelper.display({
+        id: 'selection',
+        size: 50,
+        header: ({ table }) => (
+          <div className="flex justify-center items-center h-full w-full">
+            <input
+              type="checkbox"
+              checked={table.getIsAllPageRowsSelected()}
+              onChange={table.getToggleAllPageRowsSelectedHandler()}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div className="flex justify-center items-center h-full w-full" onClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={row.getIsSelected()}
+              onChange={row.getToggleSelectedHandler()}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+          </div>
+        )
+      })
+    );
+    return cols;
   }, [userColumns, columnSizing, availableFields]);
 
   const table = useReactTable({
     data: complaints,
     columns,
-    state: { columnVisibility, columnSizing, sorting },
+    state: { columnVisibility, columnSizing, sorting, rowSelection },
     onColumnVisibilityChange: setColumnVisibility,
     onColumnSizingChange: setColumnSizing,
     onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: true,
+    getRowId: row => row._id,
     columnResizeMode: 'onChange',
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -230,6 +287,15 @@ const ComplaintList = () => {
           <p className="text-gray-500 text-sm mt-0.5">{meta.total} records found</p>
         </div>
         <div className="flex gap-2">
+          {Object.keys(rowSelection).length > 0 && (
+            <button
+               onClick={handleDeleteSelected}
+               disabled={isDeleting}
+               className="px-4 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 flex items-center gap-2 transition-all active:scale-95 shadow-sm disabled:opacity-50"
+            >
+              <Trash2 size={16} /> {isDeleting ? 'Deleting...' : `Delete (${Object.keys(rowSelection).length})`}
+            </button>
+          )}
           <button 
              onClick={() => setIsImportModalOpen(true)}
              className="px-4 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 flex items-center gap-2 transition-all active:scale-95 shadow-sm"
@@ -446,14 +512,14 @@ const ImportModal = ({ isOpen, onClose }) => {
         <div className="space-y-6 py-2">
             {!result ? (
                 <>
-                    <p className="text-sm text-gray-500">Upload an Excel file (.xlsx) to import complaints. The system will skip any records with duplicate <strong>Complaint IDs</strong>.</p>
+                    <p className="text-sm text-gray-500">Upload an Excel or CSV file (.xlsx, .csv) to import complaints. The system will skip any records with duplicate <strong>Complaint IDs</strong>.</p>
                     <div className={`mt-4 border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center transition-all ${file ? 'border-blue-400 bg-blue-50/30' : 'border-gray-200 hover:border-blue-300'}`}>
-                        <input type="file" id="file" accept=".xlsx" className="hidden" onChange={e => setFile(e.target.files[0])}/>
+                        <input type="file" id="file" accept=".xlsx, .csv" className="hidden" onChange={e => setFile(e.target.files[0])}/>
                         <label htmlFor="file" className="cursor-pointer flex flex-col items-center">
                             <div className={`p-4 rounded-full mb-3 ${file ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-400'}`}>
                                 <Upload size={32} />
                             </div>
-                            <span className="text-sm font-bold text-gray-700">{file ? file.name : 'Select MIS Excel File'}</span>
+                            <span className="text-sm font-bold text-gray-700">{file ? file.name : 'Select MIS Excel/CSV File'}</span>
                             <span className="text-xs text-gray-400 mt-1">Standard format with Complaint ID required</span>
                         </label>
                         {file && <button onClick={() => setFile(null)} className="mt-4 text-xs font-bold text-red-500 flex items-center gap-1"><X size={14}/> Remove file</button>}

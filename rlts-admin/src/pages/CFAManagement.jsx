@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { UserPlus, Edit, Ban, MapPin, Loader2, Users, X, Trash2, Key, Download, Upload, CheckCircle2 } from 'lucide-react';
 import api from '../api/axios';
 import Modal from '../components/Modal';
@@ -99,16 +100,12 @@ const CFAManagement = () => {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
-  const [showSubUsers, setShowSubUsers] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [targetCFA, setTargetCFA] = useState(null);
-  const [subUsers, setSubUsers] = useState([]);
-  const [loadingSubs, setLoadingSubs] = useState(false);
   const [editCFA, setEditCFA] = useState(null);
   const [saving, setSaving] = useState(false);
   const [meta, setMeta] = useState({ total: 0 });
   const [form, setForm] = useState({ code:'', company:'', region:'' });
-  const [subForm, setSubForm] = useState({ name:'', email:'', password:'', roleLabel: '' });
+  const navigate = useNavigate();
 
   const fetchCFAs = async () => {
     try {
@@ -119,19 +116,9 @@ const CFAManagement = () => {
     finally { setLoading(false); }
   };
 
-  const fetchSubUsers = async (cfaId) => {
-    setLoadingSubs(true);
-    try {
-      const { data } = await api.get(`/admin/cfa-master/${cfaId}/users`);
-      setSubUsers(data.data || []);
-    } catch(e) { toast.error('Failed to load staff accounts'); }
-    finally { setLoadingSubs(false); }
-  };
-
   useEffect(() => { fetchCFAs(); }, []);
 
   const resetForm = () => setForm({ code:'', company:'', region:'' });
-  const resetSubForm = () => setSubForm({ name:'', email:'', password:'', roleLabel:'' });
 
   const handleExport = async () => {
     try {
@@ -156,16 +143,6 @@ const CFAManagement = () => {
     finally { setSaving(false); }
   };
 
-  const handleCreateSub = async () => {
-    if (!subForm.email || !subForm.password) return toast.error('Email and password required');
-    setSaving(true);
-    try {
-      await api.post(`/admin/cfa-master/${targetCFA._id}/users`, subForm);
-      toast.success('Staff account added'); resetSubForm(); fetchSubUsers(targetCFA._id);
-    } catch(e) { toast.error(e.response?.data?.message || 'Failed'); }
-    finally { setSaving(false); }
-  };
-
   const handleUpdate = async () => {
     setSaving(true);
     try {
@@ -186,13 +163,6 @@ const CFAManagement = () => {
   };
 
   const handleDeactivateSubUser = async (userId) => {
-    if (!confirm(`Deactivate this staff member?`)) return;
-    try { 
-      await api.delete(`/admin/entity-users/${userId}`); 
-      toast.success('User deactivated successfully'); 
-      fetchSubUsers(targetCFA._id);
-    }
-    catch(e) { toast.error('Action failed'); }
   };
 
   const openEdit = (c) => { 
@@ -206,10 +176,7 @@ const CFAManagement = () => {
   };
 
   const openSubUsers = (c) => {
-    setTargetCFA(c);
-    setSubUsers([]);
-    setShowSubUsers(true);
-    fetchSubUsers(c._id);
+    navigate(`/cfa-management/${c._id}`);
   };
 
   return (
@@ -230,13 +197,14 @@ const CFAManagement = () => {
             <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Company</th>
             <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Country / Region</th>
             <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-            <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase text-center">Users</th>
-            <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase text-center">Manage</th>
+            <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Complaints</th>
+            <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Users</th>
+            <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Manage</th>
             <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
           </tr></thead>
           <tbody className="divide-y divide-gray-100">
-            {loading ? [...Array(3)].map((_,i) => <tr key={i}>{[...Array(7)].map((_,j) => <td key={j} className="px-5 py-4"><div className="h-4 bg-gray-200 rounded animate-pulse" /></td>)}</tr>) :
-            cfas.length === 0 ? <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-400">No CFA masters</td></tr> :
+            {loading ? [...Array(3)].map((_,i) => <tr key={i}>{[...Array(8)].map((_,j) => <td key={j} className="px-5 py-4"><div className="h-4 bg-gray-200 rounded animate-pulse" /></td>)}</tr>) :
+            cfas.length === 0 ? <tr><td colSpan={8} className="px-5 py-12 text-center text-gray-400">No CFA masters</td></tr> :
             cfas.map(c => (
               <tr key={c._id} className="hover:bg-gray-50">
                 <td className="px-5 py-3 text-sm font-bold text-blue-600">{c.code || '—'}</td>
@@ -247,6 +215,12 @@ const CFAManagement = () => {
                   <span className="flex items-center gap-1"><MapPin size={12} />{c.country ? `${c.country} / ` : ''}{c.region || '—'}</span>
                 </td>
                 <td className="px-5 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{c.isActive ? 'Active' : 'Inactive'}</span></td>
+                <td className="px-5 py-3 text-center">
+                  <div className="flex flex-col items-center">
+                    <span className="text-sm font-bold text-gray-800">{c.complaintCount || 0}</span>
+                    {c.activeComplaints > 0 && <span className="text-[10px] text-blue-600 font-bold">{c.activeComplaints} Active</span>}
+                  </div>
+                </td>
                 <td className="px-5 py-3 text-center text-sm font-medium text-gray-600">{c.userCount || 0}</td>
                 <td className="px-5 py-3 text-center">
                   <button onClick={() => openSubUsers(c)} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors">
@@ -264,52 +238,6 @@ const CFAManagement = () => {
           </tbody>
         </table>
       </div>
-
-      {/* Sub-users Management Modal */}
-      <Modal isOpen={showSubUsers} onClose={() => setShowSubUsers(false)} title={`Accounts for ${targetCFA?.company || targetCFA?.code}`}>
-        <div className="space-y-6">
-          <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 space-y-3">
-            <h3 className="text-xs font-bold uppercase text-blue-600 tracking-wider">Add New Account</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <input value={subForm.name} onChange={e => setSubForm({...subForm, name:e.target.value})} placeholder="User Name" className="p-2.5 border rounded-xl text-sm" />
-              <input value={subForm.email} onChange={e => setSubForm({...subForm, email:e.target.value})} placeholder="Login Email" type="email" className="p-2.5 border rounded-xl text-sm" />
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Key size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input value={subForm.password} onChange={e => setSubForm({...subForm, password:e.target.value})} placeholder="Password" type="password" className="w-full pl-9 p-2.5 border rounded-xl text-sm" />
-              </div>
-              <input value={subForm.roleLabel} onChange={e => setSubForm({...subForm, roleLabel:e.target.value})} placeholder="Role (e.g. Manager)" className="flex-1 p-2.5 border rounded-xl text-sm" />
-              <button onClick={handleCreateSub} disabled={saving} className="px-6 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 disabled:opacity-50">Create</button>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold uppercase text-gray-400 tracking-wider">Existing Accounts</h3>
-            {loadingSubs ? <div className="flex justify-center py-8"><Loader2 className="animate-spin text-blue-500" /></div> :
-             subUsers.length === 0 ? <p className="text-center py-8 text-sm text-gray-400 italic">No associated accounts</p> :
-             <div className="divide-y border rounded-2xl overflow-hidden bg-white">
-               {subUsers.map(s => (
-                 <div key={s._id} className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
-                   <div>
-                     <p className="text-sm font-bold text-gray-800">{s.name || 'Unnamed'}</p>
-                     <p className="text-xs text-gray-500">{s.email} • {s.roleLabel}</p>
-                   </div>
-                   <div className="flex items-center gap-4">
-                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{s.isActive ? 'Active' : 'Inactive'}</span>
-                     {s.isActive && (
-                       <button onClick={() => handleDeactivateSubUser(s._id)} className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors">
-                         <Trash2 size={16} />
-                       </button>
-                     )}
-                   </div>
-                 </div>
-               ))}
-             </div>
-            }
-          </div>
-        </div>
-      </Modal>
 
       {/* Add CFA Master Modal */}
       <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Add CFA Entity">

@@ -30,12 +30,13 @@ const listDealers = async (req, res, next) => {
     ]);
 
     const enriched = await Promise.all(dealers.map(async (dealer) => {
-      const [userCount, complaintCount, activeComplaints] = await Promise.all([
+      const [userCount, complaintCount, activeComplaints, completedComplaints] = await Promise.all([
         User.countDocuments({ dealerEntity: dealer._id, isActive: true }),
         Complaint.countDocuments({ dealerEntity: dealer._id }),
         Complaint.countDocuments({ dealerEntity: dealer._id, status: { $in: Complaint.OPEN_STATUSES } }),
+        Complaint.countDocuments({ dealerEntity: dealer._id, status: { $in: Complaint.CLOSED_STATUSES } }),
       ]);
-      return { ...dealer.toJSON(), userCount, complaintCount, activeComplaints };
+      return { ...dealer.toJSON(), userCount, complaintCount, activeComplaints, completedComplaints };
     }));
 
     sendPaginated(res, 'Dealer list retrieved', enriched, page, limit, total);
@@ -80,16 +81,17 @@ const getDealer = async (req, res, next) => {
     const dealer = await Dealer.findById(req.params.id);
     if (!dealer) return sendError(res, 404, 'Dealer not found.');
 
-    const [users, complaintCount, activeComplaints] = await Promise.all([
+    const [users, complaintCount, activeComplaints, completedComplaints] = await Promise.all([
       User.find({ dealerEntity: dealer._id }).select('-password').sort({ createdAt: -1 }),
       Complaint.countDocuments({ dealerEntity: dealer._id }),
       Complaint.countDocuments({ dealerEntity: dealer._id, status: { $in: Complaint.OPEN_STATUSES } }),
+      Complaint.countDocuments({ dealerEntity: dealer._id, status: { $in: Complaint.CLOSED_STATUSES } }),
     ]);
 
     sendSuccess(res, 200, 'Dealer retrieved', {
       dealer,
       users,
-      stats: { complaintCount, activeComplaints },
+      stats: { complaintCount, activeComplaints, completedComplaints },
     });
   } catch (error) {
     next(error);

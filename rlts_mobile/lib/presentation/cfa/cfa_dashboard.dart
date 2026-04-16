@@ -37,7 +37,7 @@ class _CfaDashboardState extends State<CfaDashboard> {
     final Map<String, Map<String, dynamic>> dealerMap = {};
 
     for (final complaint in _assigned) {
-      final dealer = complaint['dealerId'] as Map<String, dynamic>?;
+      final dealer = complaint['dealerEntity'] as Map<String, dynamic>?;
       if (dealer == null) continue;
       final dealerId = dealer['_id'] as String? ?? '';
       if (dealerId.isEmpty) continue;
@@ -253,13 +253,16 @@ class _DealerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = dealer['name'] ?? 'Unknown Dealer';
-    final businessName = dealer['businessName'];
-    final address = dealer['address'] as Map<String, dynamic>?;
-    final city = address?['city'] ?? '';
-    final state = address?['state'] ?? '';
-    final locationStr =
-        [city, state].where((s) => s.isNotEmpty).join(', ');
+    final company = dealer['company'];
+    final code = dealer['code'];
+    final region = dealer['region'] ?? '';
+    
+    final bool isCompanySameAsCode = company != null && code != null && company.toString().trim() == code.toString().trim();
+    final String displayName = (company != null && company.isNotEmpty && !isCompanySameAsCode) 
+        ? company 
+        : (code != null ? 'AG: $code' : 'Unknown Dealer');
+    final String? subText = (code != null && displayName != 'AG: $code') ? 'AG: $code' : null;
+    
     final totalComplaints = complaints.length;
 
     // Check if any complaint has a missed pickup
@@ -287,52 +290,26 @@ class _DealerCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top row — avatar + name + arrow
+              // Top row — name + arrow
               Row(
                 children: [
-                  // Dealer avatar
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppTheme.primary,
-                          AppTheme.primaryLight,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Center(
-                      child: Text(
-                        name.isNotEmpty ? name[0].toUpperCase() : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-
-                  // Name + business
+                  // Name + subText
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          name,
+                          displayName,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        if (businessName != null && businessName.isNotEmpty)
+                        if (subText != null && subText.isNotEmpty && subText != displayName)
                           Text(
-                            businessName,
+                            subText,
                             style: TextStyle(
                               fontSize: 13,
                               color: AppTheme.textSecondary,
@@ -371,14 +348,14 @@ class _DealerCard extends StatelessWidget {
               ),
 
               // Location row
-              if (locationStr.isNotEmpty) ...[
+              if (region.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Icon(Icons.location_on_outlined,
                         size: 14, color: AppTheme.textMuted),
                     const SizedBox(width: 4),
-                    Text(locationStr,
+                    Text(region,
                         style: TextStyle(
                             fontSize: 12, color: AppTheme.textMuted)),
                   ],

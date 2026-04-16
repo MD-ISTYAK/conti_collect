@@ -7,11 +7,34 @@ const CustomField = require('../models/CustomField');
 const { writeAuditLog } = require('../services/auditService');
 
 /**
- * Convert Excel serial date number to JavaScript Date.
+/**
+ * Convert Excel serial date number OR "DD/MM/YYYY" / "MM/DD/YYYY" strings to JavaScript Date.
  */
-function excelDateToJS(serial) {
-  if (!serial || typeof serial !== 'number') return null;
-  return new Date((serial - 25569) * 86400 * 1000);
+function parseDateValue(value) {
+  if (!value) return null;
+  if (typeof value === 'number') {
+    return new Date((value - 25569) * 86400 * 1000);
+  }
+  if (typeof value === 'string') {
+    const parts = value.split(/[/-]/);
+    if (parts.length === 3) {
+      const p1 = parseInt(parts[0], 10);
+      const p2 = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      let day, month;
+      if (p1 > 12) {
+        day = p1; month = p2;
+      } else if (p2 > 12) {
+        month = p1; day = p2;
+      } else {
+        day = p1; month = p2; // Default to DD/MM/YYYY for India
+      }
+      return new Date(y, month - 1, day);
+    }
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
 }
 
 /**
@@ -25,7 +48,7 @@ function excelDateToJS(serial) {
 exports.importComplaints = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ status: 'error', message: 'Please upload an Excel file.' });
+      return res.status(400).json({ status: 'error', message: 'Please upload an Excel or CSV file.' });
     }
 
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
@@ -115,8 +138,8 @@ exports.importComplaints = async (req, res) => {
       seenInBatch.add(complaintId);
 
       // 3. Parse dates
-      const misCreatedAt = excelDateToJS(row['Created On'] || row['Created At']);
-      const misAdjustedAt = excelDateToJS(row['Changed On'] || row['Updated At'] || row['Changed At']);
+      const misCreatedAt = parseDateValue(row['Created On'] || row['Created At']);
+      const misAdjustedAt = parseDateValue(row['Changed On'] || row['Updated At'] || row['Changed At']);
 
       // 4. Check if already exists
       const existing = existingMap[complaintId];

@@ -68,7 +68,7 @@ class _DealerDashboardState extends State<DealerDashboard> {
           ? const Center(child: CircularProgressIndicator())
           : ListView(padding: const EdgeInsets.all(16), children: [
               // Stats
-              GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.6, children: [
+              GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.35, children: [
                 _StatCard(label: 'Total', value: _stats['total']!, color: AppTheme.primary, icon: Icons.folder_outlined),
                 _StatCard(label: 'Pending', value: _stats['pending']!, color: AppTheme.warning, icon: Icons.pending_outlined),
                 _StatCard(label: 'In Progress', value: _stats['inProgress']!, color: AppTheme.info, icon: Icons.autorenew),
@@ -109,7 +109,7 @@ class _StatCard extends StatelessWidget {
       decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withValues(alpha: 0.15))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
         Icon(icon, color: color, size: 22),
-        const Spacer(),
+        const SizedBox(height: 8),
         Text('$value', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: color)),
         Text(label, style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.7), fontWeight: FontWeight.w500)),
       ]),

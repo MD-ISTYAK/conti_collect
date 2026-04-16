@@ -11,11 +11,20 @@ const STATUSES = [
   'REFUND_PROCESSED',
 ];
 
+const TIMELINE_STATUSES = [
+  ...STATUSES,
+  'PICKUP_SCHEDULED',
+  'SCHEDULE_UPDATED',
+  'RESCHEDULE_REQUESTED',
+  'PICKUP_PROPOSED',
+  'PICKUP_CONFIRMED'
+];
+
 const PRODUCT_TYPES = ['tire', 'glass', 'motor_part', 'battery', 'other'];
 const RETURN_REASONS = ['defective', 'wrong_item', 'damaged', 'expired', 'other'];
 
 const timelineEntrySchema = new mongoose.Schema({
-  status: { type: String, enum: STATUSES, required: true },
+  status: { type: String, enum: TIMELINE_STATUSES, required: true },
   timestamp: { type: Date, default: Date.now, required: true },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   note: { type: String, trim: true },
@@ -123,6 +132,7 @@ const complaintSchema = new mongoose.Schema({
     role: { type: String, enum: ['dealer', 'cfa'] },
     requestedAt: { type: Date, default: Date.now },
     proposedDate: { type: Date },
+    reason: { type: String, trim: true },
   }],
   timeline: [timelineEntrySchema],
   qrCode: {
@@ -197,6 +207,11 @@ complaintSchema.methods.isTerminal = function () {
 // Non-terminal (open) statuses
 complaintSchema.statics.OPEN_STATUSES = [
   'CREATED', 'APPROVED', 'CFA_ASSIGNED', 'PICKED_UP', 'RECEIVED_AT_CFA', 'VERIFIED'
+];
+
+// Terminal (closed) statuses
+complaintSchema.statics.CLOSED_STATUSES = [
+  'REJECTED', 'REFUND_PROCESSED'
 ];
 
 module.exports = mongoose.model('Complaint', complaintSchema);

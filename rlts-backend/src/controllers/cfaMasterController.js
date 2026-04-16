@@ -31,12 +31,13 @@ const listCFAs = async (req, res, next) => {
 
     // Enrich with user count and complaint stats
     const enriched = await Promise.all(cfas.map(async (cfa) => {
-      const [userCount, complaintCount, activeComplaints] = await Promise.all([
+      const [userCount, complaintCount, activeComplaints, completedComplaints] = await Promise.all([
         User.countDocuments({ cfaEntity: cfa._id, isActive: true }),
         Complaint.countDocuments({ cfaEntity: cfa._id }),
         Complaint.countDocuments({ cfaEntity: cfa._id, status: { $in: Complaint.OPEN_STATUSES } }),
+        Complaint.countDocuments({ cfaEntity: cfa._id, status: { $in: Complaint.CLOSED_STATUSES } }),
       ]);
-      return { ...cfa.toJSON(), userCount, complaintCount, activeComplaints };
+      return { ...cfa.toJSON(), userCount, complaintCount, activeComplaints, completedComplaints };
     }));
 
     sendPaginated(res, 'CFA list retrieved', enriched, page, limit, total);
@@ -81,16 +82,17 @@ const getCFA = async (req, res, next) => {
     const cfa = await CFA.findById(req.params.id);
     if (!cfa) return sendError(res, 404, 'CFA not found.');
 
-    const [users, complaintCount, activeComplaints] = await Promise.all([
+    const [users, complaintCount, activeComplaints, completedComplaints] = await Promise.all([
       User.find({ cfaEntity: cfa._id }).select('-password').sort({ createdAt: -1 }),
       Complaint.countDocuments({ cfaEntity: cfa._id }),
       Complaint.countDocuments({ cfaEntity: cfa._id, status: { $in: Complaint.OPEN_STATUSES } }),
+      Complaint.countDocuments({ cfaEntity: cfa._id, status: { $in: Complaint.CLOSED_STATUSES } }),
     ]);
 
     sendSuccess(res, 200, 'CFA retrieved', {
       cfa,
       users,
-      stats: { complaintCount, activeComplaints },
+      stats: { complaintCount, activeComplaints, completedComplaints },
     });
   } catch (error) {
     next(error);

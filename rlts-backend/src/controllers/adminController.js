@@ -474,6 +474,108 @@ const exportReport = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/admin/complaints/:id/schedule-pickup
+ */
+const schedulePickup = async (req, res, next) => {
+  try {
+    const { estimatedPickupDate } = req.body;
+    const complaint = await Complaint.findById(req.params.id).populate('dealerEntity').populate('cfaEntity');
+    
+    if (!complaint) return sendError(res, 404, 'Complaint not found.');
+
+    if (!['APPROVED', 'CFA_ASSIGNED'].includes(complaint.status)) {
+      return sendError(res, 422, `Cannot schedule pickup. Complaint status is ${complaint.status}.`);
+    }
+
+    const before = { status: complaint.status };
+    const isUpdate = !!before.estimatedPickupDate;
+    complaint.estimatedPickupDate = new Date(estimatedPickupDate);
+    complaint.pickupScheduleStatus = 'CONFIRMED';
+    
+    complaint.addTimelineEntry(
+      isUpdate ? 'SCHEDULE_UPDATED' : 'PICKUP_SCHEDULED',
+      req.user._id,
+      `Admin ${isUpdate ? 'updated' : 'scheduled'} pickup for ${new Date(estimatedPickupDate).toLocaleDateString('en-IN')}`
+    );
+
+    await complaint.save();
+
+    // Inform dealer
+    const dealerUserIds = await getEntityUserIds(complaint.dealerEntity._id, 'dealer');
+    dealerUserIds.forEach(userId => {
+      createNotification({
+        userId,
+        title: 'Pickup Scheduled',
+        body: `Pickup for ${complaint.complaintId} scheduled by Admin for ${new Date(estimatedPickupDate).toLocaleDateString('en-IN')}`,
+        type: 'pickup',
+        complaintId: complaint._id,
+      });
+      emitStatusChange(complaint.complaintId, complaint.status, userId);
+    });
+
+    // Inform CFA if assigned
+    if (complaint.cfaEntity) {
+      const cfaUserIds = await getEntityUserIds(complaint.cfaEntity._id, 'cfa');
+      cfaUserIds.forEach(userId => {
+        createNotification({
+          userId,
+          title: 'Pickup Scheduled/Updated',
+          body: `Admin scheduled pickup for ${complaint.complaintId} on ${new Date(estimatedPickupDate).toLocaleDateString('en-IN')}`,
+          type: 'pickup',
+          complaintId: complaint._id,
+        });
+      });
+    }
+
+    emitDashboardUpdate();
+
+    writeAuditLog({
+      action: 'ADMIN_SCHEDULE_PICKUP',
+      performedBy: req.user._id,
+      targetId: complaint._id,
+      targetModel: 'Complaint',
+      before: { estimatedPickupDate: before.estimatedPickupDate },
+      after: { estimatedPickupDate },
+      req,
+    });
+
+    sendSuccess(res, 200, 'Pickup scheduled successfully', complaint);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/admin/complaints/delete
+ */
+const deleteComplaints = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return sendError(res, 400, 'Please provide an array of complaint IDs to delete.');
+    }
+
+    const result = await Complaint.deleteMany({ _id: { $in: ids } });
+
+    writeAuditLog({
+      action: 'COMPLAINTS_DELETED',
+      performedBy: req.user._id,
+      targetId: ids[0],
+      targetModel: 'Complaint',
+      before: {},
+      after: { deletedCount: result.deletedCount, ids },
+      req,
+    });
+
+    emitDashboardUpdate();
+
+    sendSuccess(res, 200, `${result.deletedCount} complaint(s) deleted successfully.`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   approveComplaint,
   rejectComplaint,
@@ -483,4 +585,6 @@ module.exports = {
   getDashboard,
   getAnalytics,
   exportReport,
+  schedulePickup,
+  deleteComplaints,
 };
